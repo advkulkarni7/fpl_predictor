@@ -20,8 +20,11 @@ Improvements over v1:
   - Bank balance from history endpoint (deadline snapshot)
   - Warning about API bank limitation + interactive budget override
   - Correct GW detection using is_current / is_next from events list
+  - Player history caching — fast reloads, refresh with --refresh flag
 """
 
+import os
+import sys
 import requests
 import pandas as pd
 import numpy as np
@@ -36,7 +39,8 @@ from sklearn.preprocessing import LabelEncoder
 # 1. API HELPERS
 # ─────────────────────────────────────────
 
-BASE_URL = "https://fantasy.premierleague.com/api"
+BASE_URL   = "https://fantasy.premierleague.com/api"
+CACHE_FILE = "player_history_cache.csv"
 
 def fetch_bootstrap() -> dict:
     """Master FPL data — all players, teams, positions, events."""
@@ -101,10 +105,7 @@ def fetch_transfer_info(team_id: int, current_gw: int) -> dict:
         r.raise_for_status()
         history = r.json()
 
-        # Get the most recent completed GW entry
-        current_season = history["current"]
-        last = current_season[-1]
-
+        last           = history["current"][-1]
         bank_balance   = last["bank"] / 10
         transfers_made = last["event_transfers"]
         transfer_cost  = last["event_transfers_cost"]
@@ -131,17 +132,18 @@ def fetch_transfer_info(team_id: int, current_gw: int) -> dict:
         }
 
 # ─────────────────────────────────────────
-# 2. BUILD HISTORICAL DATASET
+# 2. BUILD HISTORICAL DATASET (WITH CACHE)
 # ─────────────────────────────────────────
 
 def rolling_avg(series: pd.Series, window: int) -> pd.Series:
     """Shift-then-roll so we never leak future data into features."""
     return series.shift(1).rolling(window, min_periods=1).mean()
 
-def build_player_history_df(bootstrap: dict, max_players: int = None) -> pd.DataFrame:
+def _fetch_fresh_history(bootstrap: dict, max_players: int = None) -> pd.DataFrame:
     """
-    For every active player, fetch their GW-by-GW history and engineer features.
-    max_players: set a small number (e.g. 100) for quick testing.
+    Fetches GW-by-GW history for every active player from the API.
+    This is the slow path — takes ~100s for all players.
+    Called only when cache is missing or --refresh is used.
     """
     players_raw = bootstrap["elements"]
     teams_df    = pd.DataFrame(bootstrap["teams"])
@@ -155,7 +157,7 @@ def build_player_history_df(bootstrap: dict, max_players: int = None) -> pd.Data
         active = active[:max_players]
 
     all_rows = []
-    print(f"Fetching history for {len(active)} players — this takes ~{len(active)//5}s...")
+    print(f"  Fetching history for {len(active)} players — ~{len(active)//5}s...")
 
     for i, player in enumerate(active):
         if i % 50 == 0:
@@ -185,22 +187,48 @@ def build_player_history_df(bootstrap: dict, max_players: int = None) -> pd.Data
         df_h["roll3_creativity"] = rolling_avg(df_h["creativity"].astype(float), 3)
         df_h["roll3_influence"]  = rolling_avg(df_h["influence"].astype(float),  3)
 
-        # Static features
         df_h["player_id"]   = pid
         df_h["player_name"] = f"{player['first_name']} {player['second_name']}"
         df_h["position"]    = pos_name
         df_h["team_name"]   = team_name
         df_h["price"]       = price
         df_h["is_home"]     = df_h["was_home"].astype(int)
-
-        # Target: actual GW points
-        df_h["target"] = df_h["total_points"]
+        df_h["target"]      = df_h["total_points"]
 
         all_rows.append(df_h)
-        time.sleep(0.05)  # polite rate limiting
+        time.sleep(0.05)
 
-    print(f"Done. {len(all_rows)} players processed.")
+    print(f"  Done. {len(all_rows)} players processed.")
     return pd.concat(all_rows, ignore_index=True)
+
+
+def build_player_history_df(bootstrap: dict,
+                             max_players: int = None,
+                             refresh: bool = False) -> pd.DataFrame:
+    """
+    Returns player history DataFrame.
+    - If cache exists and refresh=False: loads from disk instantly (~2s)
+    - If cache missing or refresh=True:  fetches from API (~100s) and saves cache
+
+    Usage:
+      python fpl_phase1_model.py           # uses cache if available
+      python fpl_phase1_model.py --refresh # forces fresh API fetch
+    """
+    if not refresh and os.path.exists(CACHE_FILE):
+        print(f"📦 Loading player history from cache ({CACHE_FILE})...")
+        df = pd.read_csv(CACHE_FILE)
+        print(f"✅ Cache loaded — {len(df)} rows, {df['player_id'].nunique()} players.")
+        return df
+
+    if refresh:
+        print("🔄 Refresh flag detected — fetching fresh player history from API...")
+    else:
+        print("📡 No cache found — fetching player history from API...")
+
+    df = _fetch_fresh_history(bootstrap, max_players)
+    df.to_csv(CACHE_FILE, index=False)
+    print(f"💾 Player history cached to {CACHE_FILE}")
+    return df
 
 # ─────────────────────────────────────────
 # 3. PREPARE FEATURES
@@ -212,10 +240,10 @@ FEATURE_COLS = [
     "roll3_goals", "roll3_assists", "roll3_clean", "roll3_bonus",
     "roll3_threat", "roll3_creativity", "roll3_influence",
     "is_home",
-    "opponent_team",   # label-encoded
-    "difficulty",      # fixture difficulty rating (1-5)
+    "opponent_team",
+    "difficulty",
     "price",
-    "pos_encoded",     # position label-encoded
+    "pos_encoded",
 ]
 
 def prepare_features(df: pd.DataFrame):
@@ -296,7 +324,6 @@ def build_current_features(bootstrap: dict, fixtures_df: pd.DataFrame,
     next_gw  = current_gw + 1
     upcoming = fixtures_df[fixtures_df["event"] == next_gw]
 
-    # Map each team to their next fixture info
     next_fixture_map = {}
     for _, row in upcoming.iterrows():
         next_fixture_map[row["team_h"]] = {
@@ -310,7 +337,6 @@ def build_current_features(bootstrap: dict, fixtures_df: pd.DataFrame,
             "opponent_team": row["team_h"]
         }
 
-    # Active players likely to play
     active = [
         p for p in players_raw
         if p["status"] == "a" and
@@ -329,7 +355,7 @@ def build_current_features(bootstrap: dict, fixtures_df: pd.DataFrame,
 
         fixture = next_fixture_map.get(player["team"], {})
         if not fixture:
-            continue  # blank GW for this team
+            continue
 
         pos_name = pos_map.get(player["element_type"], "Unknown")
         try:
@@ -412,11 +438,9 @@ def show_transfer_suggestions(my_team_df: pd.DataFrame,
 
         return budget_top
 
-    # First run with API bank balance
-    sug_df    = compute_suggestions(bank_balance)
+    sug_df     = compute_suggestions(bank_balance)
     budget_top = print_suggestions(sug_df, bank_balance)
 
-    # If limited results, offer budget override
     if len(budget_top) < 3:
         print(f"\n⚠️  Note: Due to FPL API limitations, your bank balance shown (£{bank_balance:.1f}M)")
         print(f"   may differ slightly from what the FPL app shows.")
@@ -424,7 +448,7 @@ def show_transfer_suggestions(my_team_df: pd.DataFrame,
         print(f"\n❓ Only {len(budget_top)} affordable option(s) found within £{bank_balance:.1f}M.")
 
         user_input = input(
-            f"   Enter your actual bank balance from the FPL app to see more options "
+            f"   Enter your actual bank balance from the FPL app "
             f"(or press Enter to skip): £"
         ).strip()
 
@@ -440,7 +464,6 @@ def show_transfer_suggestions(my_team_df: pd.DataFrame,
             except ValueError:
                 print("  Invalid input, skipping.")
     else:
-        # Always show the warning as a footer note
         print(f"\n⚠️  Note: Due to FPL API limitations, your bank balance (£{bank_balance:.1f}M)")
         print(f"   may differ slightly from the FPL app. Always double-check before confirming a transfer.")
 
@@ -448,32 +471,22 @@ def show_transfer_suggestions(my_team_df: pd.DataFrame,
 # 7. FULL PIPELINE
 # ─────────────────────────────────────────
 
-def run_pipeline(team_id: int, max_players: int = None):
+def run_pipeline(team_id: int, max_players: int = None, refresh: bool = False):
     """
-    End-to-end pipeline:
-      1. Fetch all data
-      2. Detect true current GW
-      3. Fetch your team picks
-      4. Fetch bank + transfer status
-      5. Build historical feature dataset
-      6. Train model
-      7. Predict next GW scores for all active players
-      8. Show your squad, captain pick, and transfer suggestions
+    End-to-end Phase 1 pipeline.
+    Pass refresh=True to force a fresh API fetch instead of using cache.
     """
     print("=" * 55)
     print("  FPL AI ASSISTANT — Phase 1: Deep ML Model")
     print("=" * 55)
 
-    # Fetch bootstrap + fixtures
     print("\n⬇️  Fetching bootstrap data...")
     bootstrap   = fetch_bootstrap()
     fixtures_df = fetch_fixtures()
 
-    # Detect true current GW
     current_gw = fetch_current_gw(bootstrap)
     print(f"📅 Last completed GW: {current_gw}  ->  Predicting for GW{current_gw + 1}")
 
-    # Fetch your team picks
     print("⬇️  Fetching your team...")
     try:
         team_data     = fetch_my_team(team_id, current_gw)
@@ -483,21 +496,17 @@ def run_pipeline(team_id: int, max_players: int = None):
         print(f"⚠️  Could not fetch team: {e}")
         my_player_ids = []
 
-    # Fetch bank + transfer status
     transfer_info   = fetch_transfer_info(team_id, current_gw)
     bank_balance    = transfer_info["bank_balance"]
     transfer_status = transfer_info["transfer_status"]
     print(f"💰 Bank: £{bank_balance:.1f}M  |  Transfers: {transfer_status}")
 
-    # Build player history dataset
     print(f"\n📚 Building player history dataset...")
-    history_df = build_player_history_df(bootstrap, max_players=max_players)
+    history_df = build_player_history_df(bootstrap, max_players=max_players, refresh=refresh)
 
-    # Train model
     print("\n🤖 Training Gradient Boosting model...")
     model, pos_enc, opp_enc, df_feat = train_model(history_df)
 
-    # Save model to disk for reuse in later phases
     with open("fpl_model.pkl", "wb") as f:
         pickle.dump({
             "model":    model,
@@ -507,7 +516,6 @@ def run_pipeline(team_id: int, max_players: int = None):
         }, f)
     print("\n💾 Model saved to fpl_model.pkl")
 
-    # Predict next GW for all active players
     print(f"\n🔮 Predicting GW{current_gw + 1} scores for all active players...")
     pred_df = build_current_features(
         bootstrap, fixtures_df, history_df, pos_enc, opp_enc, current_gw
@@ -515,7 +523,6 @@ def run_pipeline(team_id: int, max_players: int = None):
     pred_df["predicted_pts"] = model.predict(pred_df[FEATURE_COLS]).round(2)
     pred_df["predicted_pts"] = pred_df["predicted_pts"].clip(lower=0)
 
-    # Your squad
     my_team_df    = pred_df[pred_df["player_id"].isin(my_player_ids)].copy()
     other_players = pred_df[~pred_df["player_id"].isin(my_player_ids)].copy()
 
@@ -527,20 +534,17 @@ def run_pipeline(team_id: int, max_players: int = None):
         "predicted_pts", ascending=False
     ).to_string(index=False))
 
-    # Captain recommendation
     if not my_team_df.empty:
         captain      = my_team_df.nlargest(1, "predicted_pts").iloc[0]
         vice_captain = my_team_df.nlargest(2, "predicted_pts").iloc[1]
         print(f"\n🏆 Captain:      {captain['player_name']} — {captain['predicted_pts']} predicted pts")
         print(f"🥈 Vice Captain: {vice_captain['player_name']} — {vice_captain['predicted_pts']} predicted pts")
 
-    # Transfer suggestions with interactive budget override
     print("\n" + "=" * 55)
     print("  TRANSFER SUGGESTIONS")
     print("=" * 55)
     show_transfer_suggestions(my_team_df, other_players, bank_balance)
 
-    # Save predictions CSV for Phase 2
     pred_df.to_csv("fpl_predictions.csv", index=False)
     print("\n✅ Full predictions saved to fpl_predictions.csv")
     print("✅ Ready for Phase 2 (Fixture Run Analysis + Squad Optimizer)")
@@ -554,9 +558,15 @@ def run_pipeline(team_id: int, max_players: int = None):
 if __name__ == "__main__":
     MY_TEAM_ID = 9179961   # <- Your FPL team ID
 
+    # Detect --refresh flag
+    REFRESH = "--refresh" in sys.argv
+    if REFRESH:
+        print("🔄 --refresh flag detected. Will fetch fresh data from API.\n")
+
     # Use max_players=100 for a quick ~20s test run
-    # Use max_players=None for all active players (~5-10 mins)
+    # Use max_players=None for all active players (~5-10 mins, first run only)
     model, pred_df, my_team_df = run_pipeline(
         team_id=MY_TEAM_ID,
-        max_players=None
+        max_players=None,
+        refresh=REFRESH
     )
