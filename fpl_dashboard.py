@@ -21,6 +21,7 @@ Install dependencies first:
 import os
 import sys
 import warnings
+from datetime import datetime
 warnings.filterwarnings("ignore")
 
 import streamlit as st
@@ -61,6 +62,53 @@ except ImportError as e:
     BACKEND_AVAILABLE = False
     IMPORT_ERROR = str(e)
 
+# Optional advanced analytics imports (capability-gated to preserve compatibility)
+try:
+    from fpl_phase1_model import (
+        train_component_models, predict_component_pts,
+        add_price_predictions, train_price_model, compute_expected_pts,
+        COMPONENT_BLEND_WEIGHT,
+    )
+    HAS_ADV_COMPONENT_PIPELINE = True
+    HAS_PRICE_MODEL = True
+except ImportError:
+    train_component_models = None
+    predict_component_pts = None
+    add_price_predictions = None
+    train_price_model = None
+    compute_expected_pts = None
+    COMPONENT_BLEND_WEIGHT = 0.40
+    HAS_ADV_COMPONENT_PIPELINE = False
+    HAS_PRICE_MODEL = False
+
+try:
+    from fpl_phase2_fixtures import build_cs_probability_map
+    HAS_CS_PROB_MAP = True
+except ImportError:
+    build_cs_probability_map = None
+    HAS_CS_PROB_MAP = False
+
+try:
+    from fpl_phase3_constraints import (
+        run_monte_carlo_captain,
+        get_captaincy_differential_analysis,
+        get_horizon_transfer_plan,
+        get_double_hit_analysis,
+    )
+    HAS_CAPTAIN_MC = True
+    HAS_CAPTAIN_DIFF = True
+    HAS_HORIZON_PLAN = True
+    HAS_DOUBLE_HIT = True
+except ImportError:
+    run_monte_carlo_captain = None
+    get_captaincy_differential_analysis = None
+    get_horizon_transfer_plan = None
+    get_double_hit_analysis = None
+    HAS_CAPTAIN_MC = False
+    HAS_CAPTAIN_DIFF = False
+    HAS_HORIZON_PLAN = False
+    HAS_DOUBLE_HIT = False
+
 try:
     from fpl_phase7_analyst import (
         run_analyst, QUICK_QUESTIONS,
@@ -75,7 +123,7 @@ except ImportError as e:
 
 st.set_page_config(
     page_title="FPL AI Assistant",
-    page_icon="?",
+    page_icon="⚽",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -477,6 +525,840 @@ DIFFICULTY_COLORS = {
 }
 
 
+def get_theme_tokens(theme_name: str) -> dict:
+    """Return UI theme tokens for light/dark modes."""
+    themes = {
+        "light": {
+            "name": "light",
+            "bg": "#F2EFE9",
+            "bg_alt": "#EAE5DB",
+            "surface": "#FBF9F4",
+            "surface_soft": "#F5F1E8",
+            "panel": "#BFB48F",
+            "sidebar": "#564E58",
+            "sidebar_2": "#4E4750",
+            "primary": "#904E55",
+            "accent": "#6A7480",
+            "warning": "#C38B4F",
+            "danger": "#B74D54",
+            "text": "#252627",
+            "muted": "#6E6966",
+            "line": "#D6D0C4",
+            "line_strong": "#C9C1B2",
+            "shadow": "0 8px 20px rgba(37, 38, 39, 0.08)",
+            "input_bg": "#F8F4EC",
+            "input_text": "#252627",
+            "chip_bg": "rgba(144,78,85,0.08)",
+            "topbar_bg": "rgba(251, 249, 244, 0.92)",
+        },
+        "dark": {
+            "name": "dark",
+            "bg": "#252627",
+            "bg_alt": "#2D2E30",
+            "surface": "#2F3034",
+            "surface_soft": "#33353A",
+            "panel": "#564E58",
+            "sidebar": "#3B5660",
+            "sidebar_2": "#334A52",
+            "primary": "#BFB48F",
+            "accent": "#C9BDC3",
+            "warning": "#D5A46A",
+            "danger": "#D36C73",
+            "text": "#F2EFE9",
+            "muted": "#C4BCB5",
+            "line": "#45474C",
+            "line_strong": "#575A61",
+            "shadow": "0 10px 28px rgba(0, 0, 0, 0.35)",
+            "input_bg": "#303237",
+            "input_text": "#F2EFE9",
+            "chip_bg": "rgba(191,180,143,0.10)",
+            "topbar_bg": "rgba(47, 48, 52, 0.92)",
+        },
+    }
+    return themes.get(str(theme_name).lower(), themes["light"])
+
+
+def build_plotly_theme(tokens: dict) -> dict:
+    """Build Plotly theme from current UI tokens."""
+    bg = tokens["bg"]
+    surface = tokens["surface"]
+    text = tokens["text"]
+    line = tokens["line"]
+    accent = tokens["accent"]
+    return dict(
+        paper_bgcolor=bg,
+        plot_bgcolor=surface,
+        font=dict(family="Manrope, Syne, sans-serif", color=text, size=12),
+        xaxis=dict(gridcolor=line, linecolor=line, tickcolor=accent, zerolinecolor=line),
+        yaxis=dict(gridcolor=line, linecolor=line, tickcolor=accent, zerolinecolor=line),
+        colorway=[
+            tokens["primary"],
+            "#3E7E8A" if tokens["name"] == "light" else "#6FAAB5",
+            "#BFB48F",
+            tokens["warning"],
+            tokens["danger"],
+            "#8B98A6",
+        ],
+        transition=dict(duration=320, easing="cubic-in-out"),
+    )
+
+
+def _hex_to_rgba(hex_color: str, alpha: float) -> str:
+    """Convert #RRGGBB to rgba(...) for Plotly fills/markers."""
+    h = str(hex_color).strip().lstrip("#")
+    if len(h) != 6:
+        return f"rgba(0,0,0,{float(alpha):.3f})"
+    r = int(h[0:2], 16)
+    g = int(h[2:4], 16)
+    b = int(h[4:6], 16)
+    return f"rgba({r},{g},{b},{float(alpha):.3f})"
+
+
+def inject_global_styles(tokens: dict):
+    """Inject theme overrides + shell styling on top of the base CSS."""
+    is_light = tokens.get("name") == "light"
+    sidebar_text = "#F2EFE9" if is_light else tokens["text"]
+    sidebar_hover = "rgba(242,239,233,0.08)" if is_light else "rgba(255,255,255,0.05)"
+    active_bg = "rgba(191,180,143,0.16)" if is_light else "rgba(191,180,143,0.12)"
+    active_border = tokens["panel"] if is_light else tokens["primary"]
+    card_hover = "rgba(144,78,85,0.22)" if is_light else "rgba(191,180,143,0.22)"
+    rec_warning_bg = "rgba(195,139,79,0.10)" if is_light else "rgba(213,164,106,0.10)"
+    rec_danger_bg = "rgba(183,77,84,0.10)" if is_light else "rgba(211,108,115,0.11)"
+    table_header_bg = "rgba(86,78,88,0.06)" if is_light else "rgba(255,255,255,0.03)"
+    table_row_hover = "rgba(144,78,85,0.05)" if is_light else "rgba(191,180,143,0.05)"
+    nav_radio_key = "Navigation"
+
+    st.markdown(
+        f"""
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=IBM+Plex+Mono:wght@400;500;700&display=swap');
+
+        :root {{
+            --bg: {tokens["bg"]};
+            --surface: {tokens["surface"]};
+            --surface-soft: {tokens["surface_soft"]};
+            --primary: {tokens["primary"]};
+            --accent: {tokens["accent"]};
+            --warning: {tokens["warning"]};
+            --danger: {tokens["danger"]};
+            --text: {tokens["text"]};
+            --muted: {tokens["muted"]};
+            --line: {tokens["line"]};
+            --shadow: {tokens["shadow"]};
+        }}
+
+        html, body, [data-testid="stAppViewContainer"] {{
+            color: {tokens["text"]} !important;
+            background:
+                radial-gradient(900px 400px at 0% 0%, {tokens["bg_alt"]} 0%, {tokens["bg"]} 55%),
+                {tokens["bg"]} !important;
+            font-family: 'Manrope', 'Syne', sans-serif !important;
+            scrollbar-color: {tokens["primary"]} {tokens["surface"]};
+        }}
+        h1, h2, h3, h4, h5, h6 {{
+            color: {tokens["text"]};
+            font-family: 'Manrope', 'Syne', sans-serif !important;
+            letter-spacing: -0.015em;
+        }}
+        p, li {{
+            color: {tokens["text"]};
+        }}
+        a {{
+            color: {tokens["primary"]};
+        }}
+        a:hover {{
+            color: {tokens["accent"]};
+        }}
+        code, pre {{
+            font-family: 'IBM Plex Mono', 'Space Mono', monospace !important;
+        }}
+        code {{
+            background: rgba(0,0,0,0.04);
+            border: 1px solid {tokens["line"]};
+            border-radius: 6px;
+            padding: 0.08rem 0.28rem;
+        }}
+        img {{
+            max-width: 100%;
+        }}
+        *:focus-visible {{
+            outline: 2px solid {tokens["primary"]} !important;
+            outline-offset: 2px !important;
+            border-radius: 6px;
+        }}
+
+        .main .block-container {{
+            padding: 1.0rem 1.4rem 1.4rem;
+            max-width: 1560px;
+        }}
+
+        [data-testid="stSidebar"] {{
+            background: linear-gradient(180deg, {tokens["sidebar"]} 0%, {tokens["sidebar_2"]} 100%) !important;
+            border-right: 1px solid rgba(255,255,255,0.08) !important;
+            color: {sidebar_text} !important;
+        }}
+        [data-testid="stSidebar"] p,
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] span,
+        [data-testid="stSidebar"] div {{
+            color: {sidebar_text};
+        }}
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h1,
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2,
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3,
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h4,
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h5,
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h6,
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] li,
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] a,
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] strong,
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] em {{
+            font-family: 'Manrope', 'Syne', sans-serif !important;
+        }}
+        /* Preserve icon fonts used by Streamlit expanders/material icons */
+        [data-testid="stSidebar"] [class*="material"],
+        [data-testid="stSidebar"] [class*="icon"],
+        [data-testid="stSidebar"] [data-testid="stExpander"] summary svg,
+        [data-testid="stSidebar"] [data-testid="stExpander"] summary [role="img"] {{
+            font-family: unset !important;
+        }}
+        [data-testid="stSidebar"] div[data-testid="stRadio"]:has(input[aria-label="{nav_radio_key}"]) > div {{
+            gap: 0.25rem;
+        }}
+        [data-testid="stSidebar"] div[data-testid="stRadio"]:has(input[aria-label="{nav_radio_key}"]) label {{
+            border-radius: 10px;
+            padding: 0.45rem 0.55rem;
+            margin: 0.08rem 0;
+            background: transparent;
+            border: 1px solid transparent;
+            transition: background 160ms ease, border-color 160ms ease;
+        }}
+        [data-testid="stSidebar"] div[data-testid="stRadio"]:has(input[aria-label="{nav_radio_key}"]) label:hover {{
+            background: {sidebar_hover};
+            border-color: rgba(255,255,255,0.08);
+        }}
+        [data-testid="stSidebar"] div[data-testid="stRadio"]:has(input[aria-label="{nav_radio_key}"]) label:has(input:checked) {{
+            background: {active_bg};
+            border-color: {active_border};
+            box-shadow: inset 3px 0 0 {active_border};
+        }}
+        [data-testid="stSidebar"] div[data-testid="stRadio"]:has(input[aria-label="{nav_radio_key}"]) label p {{
+            font-size: 0.86rem !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.01em;
+        }}
+        [data-testid="stSidebar"] [data-testid="stExpander"] {{
+            border: 1px solid rgba(255,255,255,0.10);
+            border-radius: 12px;
+            background: rgba(255,255,255,0.04);
+            margin-bottom: 0.65rem;
+        }}
+        [data-testid="stSidebar"] [data-testid="stExpander"] summary {{
+            font-weight: 700;
+        }}
+        [data-testid="stSidebar"] [data-testid="stExpander"] summary p {{
+            margin: 0;
+            font-weight: 700 !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] {{
+            padding-top: 0.05rem;
+            padding-left: 0.55rem;
+            padding-right: 0.55rem;
+            padding-bottom: 0.45rem;
+        }}
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] .stCaption {{
+            margin-bottom: 0.15rem !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] .stNumberInput,
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] .stSelectbox,
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] .stRadio,
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] .stToggle,
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] .stButton {{
+            margin-bottom: 0.35rem !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] .stNumberInput label,
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] .stSelectbox label,
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] .stToggle label {{
+            font-size: 0.78rem !important;
+            margin-bottom: 0.15rem !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] .stNumberInput [data-baseweb="input"] {{
+            min-height: 2.15rem !important;
+            border-radius: 10px !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] .stTextInput [data-baseweb="input"] {{
+            min-height: 2.15rem !important;
+            border-radius: 10px !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] .stNumberInput [data-baseweb="input"] input {{
+            font-size: 0.9rem !important;
+            padding-top: 0.3rem !important;
+            padding-bottom: 0.3rem !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] .stTextInput [data-baseweb="input"] input {{
+            font-size: 0.9rem !important;
+            padding-top: 0.3rem !important;
+            padding-bottom: 0.3rem !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] [data-baseweb="input"] {{
+            background: rgba(0,0,0,0.16) !important;
+            border-color: {tokens["line"]} !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] [data-baseweb="input"] input {{
+            color: {sidebar_text} !important;
+            -webkit-text-fill-color: {sidebar_text} !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] [data-baseweb="input"] input::placeholder {{
+            color: {tokens["muted"]} !important;
+            opacity: 0.95 !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] .stNumberInput button {{
+            min-width: 1.95rem !important;
+            width: 1.95rem !important;
+            height: 2.15rem !important;
+            min-height: 2.15rem !important;
+            padding: 0 !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] .stNumberInput button {{
+            display: none !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] .stNumberInput button p {{
+            font-size: 0.95rem !important;
+            line-height: 1 !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] .stNumberInput [data-baseweb="input"] input {{
+            padding-right: 0.55rem !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stExpanderDetails"] .stButton > button {{
+            min-height: 2.35rem !important;
+            padding-top: 0.35rem !important;
+            padding-bottom: 0.35rem !important;
+        }}
+
+        .fpl-shell-topbar {{
+            position: sticky;
+            top: 0.3rem;
+            z-index: 50;
+            background: {tokens["topbar_bg"]};
+            border: 1px solid {tokens["line"]};
+            border-radius: 14px;
+            padding: 0.7rem 0.9rem;
+            margin-bottom: 0.95rem;
+            box-shadow: {tokens["shadow"]};
+            backdrop-filter: blur(8px);
+        }}
+        .fpl-shell-title {{
+            font-size: 0.75rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: {tokens["muted"]};
+            font-family: 'IBM Plex Mono', 'Space Mono', monospace;
+            margin-bottom: 0.1rem;
+        }}
+        .fpl-shell-page {{
+            font-size: 1.25rem;
+            font-weight: 800;
+            color: {tokens["text"]};
+            line-height: 1.1;
+        }}
+        .fpl-shell-chips {{
+            display:flex; gap:0.45rem; flex-wrap:wrap; align-items:center; justify-content:flex-end;
+        }}
+        .fpl-shell-chip {{
+            border: 1px solid {tokens["line_strong"]};
+            background: {tokens["chip_bg"]};
+            color: {tokens["text"]};
+            border-radius: 999px;
+            padding: 0.22rem 0.55rem;
+            font-size: 0.68rem;
+            font-weight: 700;
+            font-family: 'IBM Plex Mono', 'Space Mono', monospace;
+        }}
+        .fpl-card .fpl-shell-chip {{
+            border-color: {tokens["line"]};
+        }}
+
+        .fpl-card, .transfer-card, .rec-box, [data-testid="stMetric"] {{
+            background: linear-gradient(180deg, {tokens["surface"]} 0%, {tokens["surface_soft"]} 100%) !important;
+            border: 1px solid {tokens["line"]} !important;
+            box-shadow: {tokens["shadow"]} !important;
+        }}
+        .fpl-card:hover, .transfer-card:hover, [data-testid="stMetric"]:hover {{
+            border-color: {card_hover} !important;
+        }}
+        .kpi-block {{
+            background: linear-gradient(180deg, {tokens["surface"]} 0%, {tokens["surface_soft"]} 100%) !important;
+            border: 1px solid {tokens["line"]} !important;
+            box-shadow: none !important;
+        }}
+        .rec-box {{
+            border-color: {tokens["line"]} !important;
+            position: relative;
+            overflow: hidden;
+        }}
+        .rec-box::before {{
+            content: "";
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: 4px;
+            background: {tokens["primary"]};
+        }}
+        .rec-box.warning {{
+            background: linear-gradient(180deg, {tokens["surface"]} 0%, {rec_warning_bg} 100%) !important;
+            border-color: {tokens["warning"]} !important;
+        }}
+        .rec-box.warning::before {{ background: {tokens["warning"]}; }}
+        .rec-box.danger {{
+            background: linear-gradient(180deg, {tokens["surface"]} 0%, {rec_danger_bg} 100%) !important;
+            border-color: {tokens["danger"]} !important;
+        }}
+        .rec-box.danger::before {{ background: {tokens["danger"]}; }}
+        .kpi-label, [data-testid="stMetricLabel"] {{
+            color: {tokens["muted"]} !important;
+            font-family: 'IBM Plex Mono', 'Space Mono', monospace !important;
+        }}
+        .kpi-value, [data-testid="stMetricValue"] {{
+            color: {tokens["text"]} !important;
+            letter-spacing: -0.02em;
+        }}
+        .kpi-delta, [data-testid="stMetricDelta"] {{
+            color: {tokens["muted"]} !important;
+        }}
+        .section-header {{
+            color: {tokens["primary"]} !important;
+            border-bottom-color: {tokens["line"]} !important;
+            font-family: 'IBM Plex Mono', 'Space Mono', monospace !important;
+        }}
+
+        [data-testid="stMetric"] {{
+            padding: 0.65rem 0.8rem !important;
+            border-radius: 12px !important;
+        }}
+        [data-testid="stMetric"] > div {{
+            gap: 0.15rem !important;
+        }}
+
+        [data-testid="stTabs"] {{
+            gap: 0.2rem;
+        }}
+        [data-testid="stTabs"] [role="tablist"] {{
+            border-bottom: 1px solid {tokens["line"]};
+        }}
+        [data-testid="stTabs"] button {{
+            color: {tokens["muted"]} !important;
+            font-weight: 700 !important;
+            padding-top: 0.5rem !important;
+            padding-bottom: 0.5rem !important;
+        }}
+        [data-testid="stTabs"] button[aria-selected="true"] {{
+            color: {tokens["primary"]} !important;
+            border-bottom-color: {tokens["primary"]} !important;
+        }}
+        [data-testid="stTabs"] button:focus-visible {{
+            outline-offset: -2px !important;
+        }}
+
+        .js-plotly-plot {{
+            border-color: {tokens["line"]} !important;
+            background: {tokens["surface"]} !important;
+        }}
+
+        div[data-testid="stDataFrame"] {{
+            border: 1px solid {tokens["line"]};
+            border-radius: 12px;
+            overflow: auto;
+            background: {tokens["surface"]};
+        }}
+        div[data-testid="stDataFrame"] [role="grid"] {{
+            background: {tokens["surface"]} !important;
+        }}
+        div[data-testid="stDataFrame"] [role="columnheader"] {{
+            background: {table_header_bg} !important;
+            color: {tokens["text"]} !important;
+            border-bottom-color: {tokens["line"]} !important;
+            font-weight: 700 !important;
+        }}
+        div[data-testid="stDataFrame"] [role="gridcell"] {{
+            color: {tokens["text"]} !important;
+            border-bottom-color: {tokens["line"]} !important;
+        }}
+        div[data-testid="stDataFrame"] [role="row"]:hover [role="gridcell"] {{
+            background: {table_row_hover} !important;
+        }}
+
+        [data-baseweb="input"], [data-baseweb="select"], textarea {{
+            background: {tokens["input_bg"]} !important;
+            color: {tokens["input_text"]} !important;
+            border-color: {tokens["line"]} !important;
+            border-radius: 10px !important;
+        }}
+        [data-baseweb="input"] input, textarea {{
+            color: {tokens["input_text"]} !important;
+        }}
+        [data-baseweb="input"]:focus-within, [data-baseweb="select"]:focus-within {{
+            border-color: {tokens["primary"]} !important;
+            box-shadow: 0 0 0 1px {tokens["primary"]} inset !important;
+        }}
+        textarea {{
+            border-radius: 12px !important;
+        }}
+        .stSelectbox label, .stMultiSelect label, .stNumberInput label,
+        .stTextInput label, .stTextArea label, .stSlider label,
+        .stToggle label {{
+            color: {tokens["muted"]} !important;
+            font-size: 0.82rem !important;
+            font-weight: 600 !important;
+        }}
+        .stSlider [role="slider"] {{
+            box-shadow: 0 0 0 2px {tokens["surface"]}, 0 0 0 3px {tokens["primary"]} !important;
+        }}
+        .stToggle [data-baseweb="switch"] > div {{
+            background: {tokens["line"]} !important;
+        }}
+        .stToggle [data-baseweb="switch"] input:checked + div {{
+            background: {tokens["primary"]} !important;
+        }}
+        .stButton > button {{
+            border-radius: 10px !important;
+            border: 1px solid {tokens["line"]} !important;
+            font-weight: 700 !important;
+            background: {tokens["surface"]} !important;
+            color: {tokens["text"]} !important;
+        }}
+        .stButton > button[kind="primary"] {{
+            background: {tokens["primary"]} !important;
+            color: {"#F2EFE9" if is_light else "#252627"} !important;
+            border-color: {tokens["primary"]} !important;
+        }}
+        .stButton > button:hover {{
+            border-color: {tokens["primary"]} !important;
+        }}
+        .stButton > button:focus-visible {{
+            box-shadow: 0 0 0 3px rgba(144,78,85,0.15) !important;
+        }}
+
+        [data-testid="stDivider"] {{
+            border-color: {tokens["line"]} !important;
+        }}
+        [data-testid="stAlert"] {{
+            border-radius: 12px !important;
+            border: 1px solid {tokens["line"]} !important;
+        }}
+        [data-baseweb="popover"] {{
+            background: linear-gradient(180deg, {tokens["surface"]} 0%, {tokens["surface_soft"]} 100%) !important;
+            border: 1px solid {tokens["line"]} !important;
+            border-radius: 12px !important;
+            color: {tokens["text"]} !important;
+            box-shadow: {tokens["shadow"]} !important;
+        }}
+        [data-baseweb="popover"] * {{
+            color: {tokens["text"]};
+        }}
+        [data-baseweb="popover"] p,
+        [data-baseweb="popover"] li,
+        [data-baseweb="popover"] strong,
+        [data-baseweb="popover"] h1,
+        [data-baseweb="popover"] h2,
+        [data-baseweb="popover"] h3,
+        [data-baseweb="popover"] h4 {{
+            color: {tokens["text"]} !important;
+        }}
+        [data-baseweb="popover"] code {{
+            color: {tokens["primary"]} !important;
+            background: rgba(0,0,0,0.03) !important;
+            border-color: {tokens["line"]} !important;
+        }}
+        [data-baseweb="popover"] a {{
+            color: {tokens["primary"]} !important;
+        }}
+        [data-baseweb="popover"] hr {{
+            border-color: {tokens["line"]} !important;
+        }}
+        [data-testid="stDialog"] [role="dialog"] {{
+            width: min(92vw, 860px) !important;
+            max-width: 860px !important;
+            border-radius: 16px !important;
+            border: 1px solid {tokens["line"]} !important;
+            background: linear-gradient(180deg, {tokens["surface"]} 0%, {tokens["surface_soft"]} 100%) !important;
+            color: {tokens["text"]} !important;
+            box-shadow: {tokens["shadow"]} !important;
+        }}
+        [data-testid="stDialog"] [role="dialog"] * {{
+            color: {tokens["text"]};
+        }}
+        [data-testid="stDialog"] [role="dialog"] p,
+        [data-testid="stDialog"] [role="dialog"] li,
+        [data-testid="stDialog"] [role="dialog"] strong,
+        [data-testid="stDialog"] [role="dialog"] h1,
+        [data-testid="stDialog"] [role="dialog"] h2,
+        [data-testid="stDialog"] [role="dialog"] h3,
+        [data-testid="stDialog"] [role="dialog"] h4 {{
+            color: {tokens["text"]} !important;
+        }}
+        [data-testid="stDialog"] [role="dialog"] code {{
+            color: {tokens["primary"]} !important;
+            background: rgba(0,0,0,0.03) !important;
+            border: 1px solid {tokens["line"]} !important;
+            border-radius: 6px !important;
+        }}
+        [data-testid="stExpander"] {{
+            border: 1px solid {tokens["line"]};
+            border-radius: 12px;
+            background: linear-gradient(180deg, {tokens["surface"]} 0%, {tokens["surface_soft"]} 100%);
+        }}
+        [data-testid="stExpander"] summary {{
+            padding-top: 0.08rem;
+            padding-bottom: 0.08rem;
+        }}
+        [data-testid="stChatMessage"] {{
+            border: 1px solid {tokens["line"]};
+            border-radius: 12px;
+            background: linear-gradient(180deg, {tokens["surface"]} 0%, {tokens["surface_soft"]} 100%);
+            padding: 0.25rem 0.35rem;
+            margin-bottom: 0.35rem;
+        }}
+        [data-testid="stChatInput"] {{
+            border-top: 1px solid {tokens["line"]};
+            padding-top: 0.45rem;
+            margin-top: 0.25rem;
+            background: transparent;
+        }}
+        [data-testid="stChatInput"] textarea {{
+            background: {tokens["input_bg"]} !important;
+            border-color: {tokens["line"]} !important;
+            color: {tokens["input_text"]} !important;
+        }}
+        [data-testid="stSpinner"] {{
+            color: {tokens["primary"]} !important;
+        }}
+
+        @media (max-width: 980px) {{
+            .main .block-container {{
+                padding: 0.75rem 0.75rem 1.1rem;
+            }}
+            .fpl-shell-page {{ font-size: 1.05rem; }}
+            .fpl-shell-topbar {{ padding: 0.6rem 0.7rem; }}
+            .fpl-shell-chips {{ justify-content:flex-start; }}
+            [data-testid="stSidebar"] [data-testid="stExpander"] {{
+                margin-bottom: 0.45rem;
+            }}
+        }}
+        @media (max-width: 640px) {{
+            .fpl-shell-topbar {{
+                position: static;
+                margin-bottom: 0.65rem;
+            }}
+            .fpl-shell-page {{ font-size: 0.98rem; }}
+            .fpl-shell-title {{
+                font-size: 0.68rem;
+                letter-spacing: 0.10em;
+            }}
+            .fpl-shell-chip {{
+                font-size: 0.62rem;
+                padding: 0.16rem 0.42rem;
+            }}
+            [data-testid="stMetricValue"] {{
+                font-size: 1.15rem !important;
+            }}
+            [data-testid="stTabs"] button {{
+                font-size: 0.78rem !important;
+            }}
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def get_current_page_title(page: str) -> str:
+    titles = {
+        "Home": "Decision Center",
+        "My Squad": "My Squad",
+        "Fixture Planner": "Fixture Planner",
+        "Transfer Planner": "Transfer Planner",
+        "Player Explorer": "Player Explorer",
+        "Captain Picker": "Captain Picker",
+        "Season Tracker": "Season Tracker",
+        "AI Analyst": "AI Analyst",
+    }
+    return titles.get(page, page or "Dashboard")
+
+
+def render_sidebar_settings(
+    *,
+    dev_mode: bool,
+    last_refresh_dt: datetime,
+    freshness_label: str,
+):
+    """Condensed left-sidebar settings panel."""
+    with st.expander("Settings", expanded=bool(st.session_state.get("ui_settings_expanded", True))):
+        st.caption("Workspace")
+        st.text_input(
+            "Team ID",
+            key="cfg_team_id_text",
+            placeholder="Enter your FPL Team ID",
+        )
+        helper_cols = st.columns([1.15, 0.85])
+        with helper_cols[0]:
+            if st.button("Find your ID?", use_container_width=True, key="open_team_id_help"):
+                st.session_state["show_team_id_help"] = True
+        with helper_cols[1]:
+            raw_team_id = str(st.session_state.get("cfg_team_id_text", "")).strip()
+            digits_only = "".join(ch for ch in raw_team_id if ch.isdigit())
+            if digits_only:
+                st.session_state["cfg_team_id"] = int(digits_only)
+            if raw_team_id and raw_team_id != digits_only:
+                st.caption("Digits only")
+        c1, c2 = st.columns([1.05, 0.95])
+        with c1:
+            st.number_input(
+                "Bank (£M)",
+                key="cfg_bank_override",
+                step=0.1,
+                min_value=0.0,
+            )
+        with c2:
+            st.selectbox(
+                "Theme",
+                ["light", "dark"],
+                key="ui_theme",
+            )
+        st.toggle(
+            "Force fresh API pull",
+            key="cfg_refresh",
+        )
+        if st.button("Refresh Data", use_container_width=True, type="primary", key="sidebar_refresh_data"):
+            st.cache_data.clear()
+            st.session_state["data_refreshed_at"] = datetime.now().isoformat(timespec="seconds")
+            st.session_state["run"] = True
+            st.rerun()
+        st.caption(
+            f"Last refresh: {last_refresh_dt.strftime('%Y-%m-%d %H:%M:%S')} · {freshness_label}"
+        )
+        if dev_mode:
+            st.toggle(
+                "Show QA panel",
+                key="cfg_show_qa_panel",
+                help="Developer diagnostics for UI/runtime health.",
+            )
+
+
+def render_team_id_help_dialog():
+    """Centered help dialog explaining how to find the FPL Team ID."""
+    help_body = """
+**How to Find Your FPL Team ID**
+
+Your FPL Team ID is a unique number linked to your Fantasy Premier League account.
+
+**Important**
+
+You must use a web browser — the Team ID is not visible in the official FPL mobile app.
+
+**Steps (2025/26 Season)**
+
+1. Go to the official Fantasy Premier League website and log in.
+
+2. Open either the Pick Team or Points tab.
+
+3. Scroll down and click View Gameweek History or Transfer History.
+
+4. Check your browser’s address bar (URL).
+
+5. Your Team ID is the number between /entry/ and the next /.
+
+Example URL:
+https://fantasy.premierleague.com/entry/12345/history
+
+✅ Team ID: 12345
+
+**How to Find a Friend’s Team ID**
+
+1. Open the Leagues & Cups tab.
+
+2. Select a league you both are in.
+
+3. Click on your friend’s Team Name.
+
+4. Check the URL — the number after /entry/ is their Team ID.
+
+**Tip**
+
+If the ID doesn’t show, make sure you’re on the website in a browser, not the FPL app.
+"""
+    if hasattr(st, "dialog"):
+        @st.dialog("How to Find Your FPL Team ID")
+        def _team_id_dialog():
+            st.link_button(
+                "Open Official FPL Website",
+                "https://fantasy.premierleague.com/",
+                use_container_width=True,
+            )
+            st.markdown(help_body)
+        _team_id_dialog()
+    else:
+        # Fallback for older Streamlit versions: still show the full text inline.
+        with st.expander("How to Find Your FPL Team ID", expanded=True):
+            st.link_button(
+                "Open Official FPL Website",
+                "https://fantasy.premierleague.com/",
+                use_container_width=True,
+            )
+            st.markdown(help_body)
+
+
+def render_top_status_bar(
+    *,
+    page: str,
+    app_name: str,
+    team_id: int,
+    bank_chip: str,
+    freshness_label: str,
+    freshness_color: str,
+):
+    page_title = get_current_page_title(page)
+    st.markdown(
+        f"""
+        <div class="fpl-shell-topbar">
+            <div style="display:flex; justify-content:space-between; gap:0.8rem; align-items:center; flex-wrap:wrap;">
+                <div>
+                    <div class="fpl-shell-title">{_safe_text(app_name)}</div>
+                    <div class="fpl-shell-page">{_safe_text(page_title)}</div>
+                </div>
+                <div class="fpl-shell-chips">
+                    <span class="fpl-shell-chip">Team {int(team_id)}</span>
+                    <span class="fpl-shell-chip">{_safe_text(bank_chip)}</span>
+                    <span class="fpl-shell-chip" style="border-color:{_safe_text(freshness_color)}; color:{_safe_text(freshness_color)};">
+                        Data {_safe_text(freshness_label)}
+                    </span>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_page_hero(title: str, subtitle: str = "", meta_chips: list[str] | None = None):
+    chips_html = ""
+    if meta_chips:
+        chips_html = "".join(
+            f"<span class='fpl-shell-chip' style='font-size:0.64rem; padding:0.18rem 0.45rem;'>{_safe_text(c)}</span>"
+            for c in meta_chips
+        )
+    st.markdown(
+        f"""
+        <div class='fpl-card' style='margin-top:0.1rem; margin-bottom:0.85rem;'>
+            <div class='kpi-label' style='margin-bottom:0.25rem;'>WORKSPACE VIEW</div>
+            <div style='font-size:1.15rem; font-weight:800; color:var(--text);'>{_safe_text(title)}</div>
+            <div style='font-size:0.82rem; color:var(--muted); margin-top:0.2rem;'>{_safe_text(subtitle)}</div>
+            <div style='display:flex; gap:0.35rem; flex-wrap:wrap; margin-top:0.55rem;'>{chips_html}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def load_all_data(team_id: int, refresh: bool = False):
     """Load all data from FPL API and run full pipeline. Cached for 5 mins."""
@@ -498,9 +1380,39 @@ def load_all_data(team_id: int, refresh: bool = False):
         models, current_gw, my_player_ids=my_player_ids
     )
 
+    advanced_pipeline_enabled = False
+    advanced_pipeline_error = ""
+    if HAS_ADV_COMPONENT_PIPELINE and train_component_models and predict_component_pts and compute_expected_pts:
+        try:
+            component_models = train_component_models(history_df)
+            pred_df = predict_component_pts(component_models, pred_df)
+            if {"predicted_pts", "pts_from_components"}.issubset(pred_df.columns):
+                direct_w = 1.0 - float(COMPONENT_BLEND_WEIGHT)
+                pred_df["predicted_pts"] = (
+                    direct_w * pd.to_numeric(pred_df["predicted_pts"], errors="coerce").fillna(0.0)
+                    + float(COMPONENT_BLEND_WEIGHT) * pd.to_numeric(pred_df["pts_from_components"], errors="coerce").fillna(0.0)
+                ).round(2)
+            pred_df = compute_expected_pts(pred_df)
+            advanced_pipeline_enabled = True
+        except Exception as e:
+            advanced_pipeline_error = str(e)
+
+    if HAS_PRICE_MODEL and train_price_model and add_price_predictions:
+        try:
+            price_model = train_price_model(history_df)
+            pred_df = add_price_predictions(price_model, pred_df)
+        except Exception:
+            pass
+
     custom_diff     = build_custom_difficulty(history_df, bootstrap)
     team_form_map   = build_team_form(history_df, bootstrap)
     opp_scoring_map = build_opponent_scoring_map(history_df)
+    cs_prob_map = None
+    if HAS_CS_PROB_MAP and build_cs_probability_map:
+        try:
+            cs_prob_map = build_cs_probability_map(history_df)
+        except Exception:
+            cs_prob_map = None
     chip_info       = build_chip_status(team_id, bootstrap, fixtures_df, current_gw)
 
     fixture_run_df = build_fixture_run(
@@ -508,11 +1420,26 @@ def load_all_data(team_id: int, refresh: bool = False):
         custom_difficulty=custom_diff,
         gw_lookahead=FIXTURE_LOOKAHEAD
     )
-    enriched_df = build_player_fixture_scores(
-        pred_df, fixture_run_df, current_gw,
-        team_form_map, opp_scoring_map,
-        FIXTURE_LOOKAHEAD
-    )
+    try:
+        if cs_prob_map is not None:
+            enriched_df = build_player_fixture_scores(
+                pred_df, fixture_run_df, current_gw,
+                team_form_map, opp_scoring_map,
+                FIXTURE_LOOKAHEAD,
+                cs_probability_map=cs_prob_map,
+            )
+        else:
+            enriched_df = build_player_fixture_scores(
+                pred_df, fixture_run_df, current_gw,
+                team_form_map, opp_scoring_map,
+                FIXTURE_LOOKAHEAD
+            )
+    except TypeError:
+        enriched_df = build_player_fixture_scores(
+            pred_df, fixture_run_df, current_gw,
+            team_form_map, opp_scoring_map,
+            FIXTURE_LOOKAHEAD
+        )
 
     my_team  = enriched_df[enriched_df["player_id"].isin(my_player_ids)].copy()
     others   = enriched_df[~enriched_df["player_id"].isin(my_player_ids)].copy()
@@ -524,6 +1451,7 @@ def load_all_data(team_id: int, refresh: bool = False):
         "fixtures_df":   fixtures_df,
         "current_gw":    current_gw,
         "my_player_ids": my_player_ids,
+        "team_data":     team_data,
         "transfer_info": transfer_info,
         "enriched_df":   enriched_df,
         "my_team":       my_team,
@@ -533,6 +1461,10 @@ def load_all_data(team_id: int, refresh: bool = False):
         "rmse_map":      rmse_map,
         "models":        models,
         "history_df":    history_df,
+        "feature_capabilities": get_feature_capabilities(),
+        "advanced_pipeline_enabled": bool(advanced_pipeline_enabled),
+        "advanced_pipeline_error": advanced_pipeline_error,
+        "cs_prob_map":   cs_prob_map,
     }
 
 
@@ -578,6 +1510,109 @@ def _safe_text(text) -> str:
     )
 
 
+def _xpts(row) -> float:
+    """Use expected_pts when present, else predicted_pts."""
+    try:
+        v = row.get("expected_pts")
+    except Exception:
+        v = None
+    if v is not None and not pd.isna(v):
+        try:
+            return float(v)
+        except Exception:
+            pass
+    try:
+        return float(row.get("predicted_pts", 0.0))
+    except Exception:
+        return 0.0
+
+
+def _price_tag(change: float) -> str:
+    try:
+        c = float(change or 0.0)
+    except Exception:
+        c = 0.0
+    if c > 0.05:
+        return " ↑"
+    if c < -0.05:
+        return " ↓"
+    return ""
+
+
+def pick_points_col(df: pd.DataFrame) -> str:
+    return "expected_pts" if isinstance(df, pd.DataFrame) and "expected_pts" in df.columns else "predicted_pts"
+
+
+def pick_reliability_col(df: pd.DataFrame) -> str | None:
+    if isinstance(df, pd.DataFrame) and "p_plays_full" in df.columns:
+        return "p_plays_full"
+    return None
+
+
+def get_quantile_bounds(row) -> tuple[float | None, float | None]:
+    lo = row.get("pts_low") if hasattr(row, "get") else None
+    hi = row.get("pts_high") if hasattr(row, "get") else None
+    try:
+        lo = None if lo is None or pd.isna(lo) else float(lo)
+    except Exception:
+        lo = None
+    try:
+        hi = None if hi is None or pd.isna(hi) else float(hi)
+    except Exception:
+        hi = None
+    return lo, hi
+
+
+def get_feature_capabilities() -> dict:
+    return {
+        "adv_component_pipeline": bool(HAS_ADV_COMPONENT_PIPELINE),
+        "price_model": bool(HAS_PRICE_MODEL),
+        "cs_prob_map": bool(HAS_CS_PROB_MAP),
+        "captain_mc": bool(HAS_CAPTAIN_MC),
+        "captain_diff": bool(HAS_CAPTAIN_DIFF),
+        "horizon_plan": bool(HAS_HORIZON_PLAN),
+        "double_hit": bool(HAS_DOUBLE_HIT),
+    }
+
+
+ADVANCED_METRIC_COLUMNS = [
+    "expected_pts",
+    "pts_low",
+    "pts_high",
+    "captain_ev",
+    "p_plays_full",
+    "predicted_price_change",
+]
+
+
+def summarize_advanced_columns(df: pd.DataFrame) -> dict:
+    if not isinstance(df, pd.DataFrame):
+        return {"present": 0, "missing": ADVANCED_METRIC_COLUMNS.copy()}
+    present = [c for c in ADVANCED_METRIC_COLUMNS if c in df.columns]
+    missing = [c for c in ADVANCED_METRIC_COLUMNS if c not in df.columns]
+    return {"present": len(present), "present_cols": present, "missing": missing}
+
+
+def build_page_readiness_table(
+    my_team_df: pd.DataFrame,
+    others_df: pd.DataFrame,
+    enriched_df: pd.DataFrame,
+    caps: dict,
+) -> pd.DataFrame:
+    col_checks = summarize_advanced_columns(enriched_df)
+    has_enriched_core = col_checks["present"]
+    rows = [
+        {"Page": "Home", "Needs": "expected_pts,captain_ev,p_plays_full", "Ready": "Yes" if has_enriched_core >= 1 else "Partial"},
+        {"Page": "My Squad", "Needs": "expected_pts,pts_low,pts_high,priceΔ", "Ready": "Yes" if all(c in my_team_df.columns for c in ["expected_pts", "pts_low", "pts_high", "predicted_price_change"]) else "Partial"},
+        {"Page": "Transfer Planner", "Needs": "horizon,double-hit,total_ev,price", "Ready": "Yes" if caps.get("horizon_plan") and caps.get("double_hit") else "Partial"},
+        {"Page": "Player Explorer", "Needs": "expected_pts,p_plays_full,priceΔ", "Ready": "Yes" if all(c in enriched_df.columns for c in ["expected_pts", "p_plays_full"]) else "Partial"},
+        {"Page": "Captain Picker", "Needs": "captain_ev,p_plays_full,MC,diff", "Ready": "Yes" if all([caps.get("captain_mc"), caps.get("captain_diff")]) and all(c in my_team_df.columns for c in ["captain_ev", "p_plays_full"]) else "Partial"},
+        {"Page": "Season Tracker", "Needs": "sell-price (+ xPts optional)", "Ready": "Yes" if True else "Yes"},
+        {"Page": "AI Analyst", "Needs": "xPts context text + enriched_df", "Ready": "Yes" if "expected_pts" in enriched_df.columns else "Partial"},
+    ]
+    return pd.DataFrame(rows)
+
+
 def player_identity_html(
     player_name: str,
     team_name: str,
@@ -603,7 +1638,7 @@ def player_identity_html(
         "font-family='Space Mono' font-size='15'>FC</text></svg>"
     )
     subtitle_html = (
-        f"<div style='font-size:0.74rem; color:#90a2be; margin-top:0.1rem;'>{subtitle_safe}</div>"
+        f"<div style='font-size:0.74rem; color:var(--muted); margin-top:0.1rem;'>{subtitle_safe}</div>"
         if subtitle_safe else ""
     )
 
@@ -612,13 +1647,13 @@ def player_identity_html(
         f"<img class='{face_class}' src='{face_final}' "
         "onerror=\"this.style.display='none'; this.nextElementSibling.style.display='flex';\" />"
         f"<div class='{face_class}' style='display:none; align-items:center; justify-content:center;"
-        " color:#eaf2ff; font-weight:700; background:linear-gradient(145deg,#172a4a,#0d1730);'>"
+        " color:var(--text); font-weight:700; background:linear-gradient(145deg,var(--surface-soft),var(--bg));'>"
         f"{fallback_initial}</div>"
         "<div style='min-width:0;'>"
         f"<div style='font-weight:700; font-size:0.96rem; line-height:1.1;'>{pname}</div>"
         "<div class='entity-line' style='margin-top:0.16rem; gap:0.35rem;'>"
         f"<img class='team-badge' src='{badge_final}' onerror=\"this.onerror=null;this.style.display='none';\" />"
-        f"<span style='font-size:0.75rem; color:#9cb0d0;'>{tname}</span>"
+        f"<span style='font-size:0.75rem; color:var(--muted);'>{tname}</span>"
         "</div>"
         f"{subtitle_html}"
         "</div>"
@@ -676,7 +1711,7 @@ def build_lineup_board_html(xi_df: pd.DataFrame, cap_id: int, vc_id: int) -> str
                 f"<img class='player-face-sm' src='{face}' "
                 "onerror=\"this.style.display='none'; this.nextElementSibling.style.display='flex';\" />"
                 "<div class='player-face-sm' style='display:none; align-items:center; justify-content:center;"
-                " color:#eaf2ff; font-weight:700; background:linear-gradient(145deg,#172a4a,#0d1730);'>?</div>"
+                " color:var(--text); font-weight:700; background:linear-gradient(145deg,var(--surface-soft),var(--bg));'>?</div>"
                 f"<span class='xi-pts {pts_class}'>{pts_text} pts</span>"
                 "</div>"
                 f"<div class='xi-name'>{pname}</div>"
@@ -709,7 +1744,7 @@ def render_decision_banner(
 ):
     risk_cls = "danger" if risk_level == "High" else "warning" if risk_level == "Medium" else ""
     reasons_html = "".join(
-        f"<li style='margin:0.15rem 0; color:#b9cae6; font-size:0.82rem;'>{_safe_text(r)}</li>"
+        f"<li style='margin:0.15rem 0; color:var(--muted); font-size:0.82rem;'>{_safe_text(r)}</li>"
         for r in (reasons or [])
     )
     st.markdown(
@@ -718,12 +1753,16 @@ def render_decision_banner(
             <div class='kpi-label'>{_safe_text(title)}</div>
             <div style='display:flex; justify-content:space-between; gap:0.8rem; align-items:flex-start;'>
                 <div>
-                    <div style='font-size:1.15rem; font-weight:800; color:#eaf2ff;'>{_safe_text(primary_action)}</div>
-                    <div style='font-size:0.78rem; color:#90a2be; margin-top:0.2rem;'>Risk: {_safe_text(risk_level)}</div>
+                    <div style='font-size:1.15rem; font-weight:800; color:var(--text);'>{_safe_text(primary_action)}</div>
+                    <div style='font-size:0.78rem; color:var(--muted); margin-top:0.2rem;'>Risk: {_safe_text(risk_level)}</div>
                 </div>
                 <div style='text-align:right;'>
-                    <div style='font-size:0.68rem; color:#37b6ff; font-family:Space Mono;'>CONFIDENCE</div>
-                    <div style='font-size:1.25rem; font-weight:800; color:#27e8a7;'>{float(confidence):.0f}%</div>
+                    <div style='font-size:0.68rem; color:var(--accent); font-family:Space Mono;'>
+                        CONFIDENCE
+                        <span title='Confidence is signal strength from model agreement, gain margin, fixture context, and availability. It is not a guarantee.'
+                              style='cursor:help; color:var(--muted); margin-left:0.2rem;'>ⓘ</span>
+                    </div>
+                    <div style='font-size:1.25rem; font-weight:800; color:var(--primary);'>{float(confidence):.0f}%</div>
                 </div>
             </div>
             <ul style='margin:0.55rem 0 0 1.0rem; padding:0;'>{reasons_html}</ul>
@@ -740,21 +1779,25 @@ def render_section_header(title: str):
     )
 
 
-def render_stat_cards(cards: list[dict], compact: bool = False):
+def render_stat_cards(cards: list[dict], compact: bool | None = None):
     if not cards:
         return
-    per_row = 2 if compact else min(5, len(cards))
+    # Auto mode keeps rows readable on smaller screens after compact toggle removal.
+    if compact is True:
+        per_row = 2
+    else:
+        per_row = min(3, len(cards))
     for i in range(0, len(cards), per_row):
         row = cards[i:i + per_row]
         cols = st.columns(len(row))
         for idx, card in enumerate(row):
             tone = card.get("tone", "neutral")
             tone_color = {
-                "positive": "#27e8a7",
-                "warning": "#ffb547",
-                "danger": "#ff5d73",
-                "neutral": "#37b6ff",
-            }.get(tone, "#37b6ff")
+                "positive": "var(--primary)",
+                "warning": "var(--warning)",
+                "danger": "var(--danger)",
+                "neutral": "var(--accent)",
+            }.get(tone, "var(--accent)")
             with cols[idx]:
                 st.markdown(
                     f"""
@@ -777,22 +1820,24 @@ def render_recommendation_card(
     supporting_points: list[str],
 ):
     risks = "".join(
-        f"<li style='margin:0.12rem 0; color:#ffb2bf; font-size:0.76rem;'>{_safe_text(r)}</li>"
+        f"<li style='margin:0.12rem 0; color:var(--danger); font-size:0.76rem;'>{_safe_text(r)}</li>"
         for r in (risk_notes or [])
     )
     points = "".join(
-        f"<li style='margin:0.12rem 0; color:#bdd3f2; font-size:0.76rem;'>{_safe_text(p)}</li>"
+        f"<li style='margin:0.12rem 0; color:var(--muted); font-size:0.76rem;'>{_safe_text(p)}</li>"
         for p in (supporting_points or [])
     )
     st.markdown(
         f"""
         <div class='transfer-card'>
             <div class='kpi-label'>Recommendation</div>
-            <div style='font-size:1rem; font-weight:800; color:#eaf2ff; margin-bottom:0.35rem;'>{_safe_text(headline)}</div>
+            <div style='font-size:1rem; font-weight:800; color:var(--text); margin-bottom:0.35rem;'>{_safe_text(headline)}</div>
             <div style='display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:0.45rem;'>
                 <span class='xi-role'>Next GW: {impact_now:+.2f}</span>
                 <span class='xi-role'>5 GW: {impact_horizon:+.2f}</span>
-                <span class='xi-role'>Confidence: {confidence:.0f}%</span>
+                <span class='xi-role' title='Confidence is signal strength from model agreement, gain margin, fixture context, and availability. It is not a guarantee.'>
+                    Confidence: {confidence:.0f}% ⓘ
+                </span>
             </div>
             <div style='display:grid; grid-template-columns:1fr 1fr; gap:0.8rem;'>
                 <div><div class='kpi-label'>Why</div><ul style='margin:0.2rem 0 0 1rem; padding:0;'>{points}</ul></div>
@@ -854,13 +1899,27 @@ def compute_transfer_decision_confidence(rec: str, ilp_1: dict, hit_transfers: l
     base = 56.0
     gain_5 = float(ilp_1.get("total_gain", 0.0) or 0.0)
     gain_1 = float(ilp_1.get("total_next_gain", 0.0) or 0.0)
+    total_ev = float(ilp_1.get("total_ev", gain_5) or gain_5)
     hit_count = len(hit_transfers or [])
+    top_tr = (ilp_1.get("transfers") or [{}])[0] if isinstance(ilp_1, dict) else {}
+    urgency = float(top_tr.get("urgency_score", 0.0) or 0.0)
+    blank_penalty = 8.0 if bool(top_tr.get("is_blank", False)) else 0.0
+    spread_penalty = 0.0
+    try:
+        in_hi = float(top_tr.get("in_pts_high", np.nan))
+        in_lo = float(top_tr.get("in_pts_low", np.nan))
+        if not np.isnan(in_hi) and not np.isnan(in_lo):
+            spread_penalty = min(6.0, max(0.0, in_hi - in_lo) * 0.8)
+    except Exception:
+        spread_penalty = 0.0
     if rec == "USE NOW":
-        score = base + 9.0 + 6.0 * min(gain_5, 3.0) + 4.0 * min(gain_1, 2.0) - 2.0 * hit_count
+        score = base + 8.0 + 5.0 * min(gain_5, 3.0) + 3.0 * min(gain_1, 2.0) + 3.0 * min(total_ev, 3.0)
     elif rec == "BORDERLINE":
-        score = base + 2.0 + 3.5 * min(gain_5, 2.0) + 2.0 * min(gain_1, 1.5) - 1.5 * hit_count
+        score = base + 1.5 + 3.0 * min(gain_5, 2.0) + 1.5 * min(gain_1, 1.5) + 2.0 * min(total_ev, 2.0)
     else:
-        score = base - 8.0 + 1.5 * min(gain_5, 1.0) - 2.0 * hit_count
+        score = base - 7.0 + 1.0 * min(gain_5, 1.0) + 1.0 * min(total_ev, 1.0)
+    score += min(4.0, urgency * 1.5)
+    score -= (2.0 * hit_count + blank_penalty + spread_penalty)
     return float(np.clip(score, 30.0, 92.0))
 
 
@@ -922,56 +1981,105 @@ def build_ui_health_snapshot() -> dict:
     }
 
 
+dev_mode = os.getenv("FPL_DEBUG_UI", "0") == "1"
+if "cfg_team_id" not in st.session_state:
+    st.session_state["cfg_team_id"] = int(TEAM_ID if BACKEND_AVAILABLE else 9179961)
+if "cfg_team_id_text" not in st.session_state:
+    st.session_state["cfg_team_id_text"] = str(st.session_state["cfg_team_id"])
+if "cfg_bank_override" not in st.session_state:
+    st.session_state["cfg_bank_override"] = 0.0
+if "cfg_refresh" not in st.session_state:
+    st.session_state["cfg_refresh"] = False
+if "cfg_show_qa_panel" not in st.session_state:
+    st.session_state["cfg_show_qa_panel"] = False
+if "data_refreshed_at" not in st.session_state:
+    st.session_state["data_refreshed_at"] = datetime.now().isoformat(timespec="seconds")
+if "ui_theme" not in st.session_state:
+    st.session_state["ui_theme"] = "light"
+if "ui_settings_expanded" not in st.session_state:
+    st.session_state["ui_settings_expanded"] = True
+if "show_team_id_help" not in st.session_state:
+    st.session_state["show_team_id_help"] = False
+
+ui_tokens = get_theme_tokens(st.session_state["ui_theme"])
+PLOTLY_THEME = build_plotly_theme(ui_tokens)
+inject_global_styles(ui_tokens)
+POSITION_COLOR_MAP = {
+    "Goalkeeper": ui_tokens["primary"],
+    "Defender": ui_tokens["accent"],
+    "Midfielder": ui_tokens["warning"],
+    "Forward": ui_tokens["danger"],
+}
+PLOTLY_PRIMARY = ui_tokens["primary"]
+PLOTLY_ACCENT = ui_tokens["accent"]
+PLOTLY_WARNING = ui_tokens["warning"]
+PLOTLY_DANGER = ui_tokens["danger"]
+PLOTLY_TEXT = ui_tokens["text"]
+PLOTLY_SURFACE = ui_tokens["surface"]
+PLOTLY_LINE = ui_tokens["line"]
+PLOTLY_XPTS_SCALE = [[0, ui_tokens["line_strong"]], [0.5, ui_tokens["accent"]], [1, ui_tokens["primary"]]]
+PLOTLY_RMSE_SCALE = [[0, ui_tokens["primary"]], [0.5, ui_tokens["warning"]], [1, ui_tokens["danger"]]]
+
+PAGE_OPTIONS = [
+    "Home", "My Squad", "Fixture Planner", "Transfer Planner",
+    "Player Explorer", "Captain Picker", "Season Tracker", "AI Analyst",
+]
+PAGE_ICONS = {
+    "Home": "⌂",
+    "My Squad": "◍",
+    "Fixture Planner": "▦",
+    "Transfer Planner": "↔",
+    "Player Explorer": "◎",
+    "Captain Picker": "★",
+    "Season Tracker": "◔",
+    "AI Analyst": "◇",
+}
+
+last_refresh_dt = datetime.fromisoformat(st.session_state["data_refreshed_at"])
+age_seconds = (datetime.now() - last_refresh_dt).total_seconds()
+is_stale = age_seconds > 300
+freshness_label = "Stale" if is_stale else "Fresh"
+freshness_color = PLOTLY_WARNING if is_stale else PLOTLY_PRIMARY
+bank_chip = (
+    f"Bank £{float(st.session_state['cfg_bank_override']):.1f}M"
+    if float(st.session_state["cfg_bank_override"]) > 0
+    else "Bank Auto"
+)
+
 with st.sidebar:
-    st.markdown("### ? FPL AI")
-    st.caption("ASSISTANT")
-
-    st.divider()
-
-    team_id_input = st.number_input(
-        "Your FPL Team ID",
-        value=TEAM_ID if BACKEND_AVAILABLE else 9179961,
-        step=1,
-        help="Find your team ID in the FPL website URL"
+    st.markdown("### FPL AI Assistant")
+    st.caption("Decision-first FPL workflow")
+    render_sidebar_settings(
+        dev_mode=dev_mode,
+        last_refresh_dt=last_refresh_dt,
+        freshness_label=freshness_label,
     )
-
-    bank_override = st.number_input(
-        "Bank Balance Override (£M)",
-        value=0.0, step=0.1, min_value=0.0,
-        help="Override if API bank differs from FPL app"
-    )
-
-    refresh = st.toggle("Force Fresh Data", value=False,
-                        help="Re-fetch all player history from API (~2 min)")
-
-    if st.button("Run Analysis", use_container_width=True, type="primary"):
-        st.cache_data.clear()
-        st.session_state["run"] = True
-        st.rerun()
-
     st.divider()
-
     page = st.radio(
         "Navigation",
-        ["My Squad", "Fixture Planner", "Transfer Planner",
-         "Player Explorer", "Captain Picker", "Season Tracker",
-         "AI Analyst"],
-        label_visibility="collapsed"
+        PAGE_OPTIONS,
+        key="nav_page_radio",
+        label_visibility="collapsed",
+        format_func=lambda p: f"{PAGE_ICONS.get(p, '•')}  {p}",
     )
-    compact_layout = st.toggle(
-        "Compact layout",
-        value=False,
-        help="Use stacked controls and fewer columns for smaller screens.",
-    )
-    dev_mode = os.getenv("FPL_DEBUG_UI", "0") == "1"
-    show_qa_panel = st.toggle(
-        "Show QA panel",
-        value=False,
-        help="Developer diagnostics for UI/runtime health.",
-    ) if dev_mode else False
+    st.caption("Planning • Analysis • Tracking")
 
-    st.divider()
-    st.caption("Phases 1-4 backend active | ML | ILP | Fixtures | XI Optimizer")
+render_top_status_bar(
+    page=page,
+    app_name="FPL AI Assistant",
+    team_id=int(st.session_state["cfg_team_id"]),
+    bank_chip=bank_chip,
+    freshness_label=freshness_label,
+    freshness_color=freshness_color,
+)
+if st.session_state.get("show_team_id_help", False):
+    st.session_state["show_team_id_help"] = False
+    render_team_id_help_dialog()
+
+team_id_input = int(st.session_state["cfg_team_id"])
+bank_override = float(st.session_state["cfg_bank_override"])
+refresh = bool(st.session_state["cfg_refresh"])
+show_qa_panel = bool(st.session_state["cfg_show_qa_panel"]) if dev_mode else False
 
 
 
@@ -984,23 +2092,26 @@ if not BACKEND_AVAILABLE:
 if "run" not in st.session_state:
     st.session_state["run"] = False
 
-skeleton_placeholder = st.empty()
-with skeleton_placeholder.container():
-    render_loading_skeleton()
-with st.spinner("Loading data from FPL API and running analysis..."):
-    try:
-        data = load_all_data(int(team_id_input), refresh=refresh)
-    except Exception as e:
+try:
+    if refresh:
+        skeleton_placeholder = st.empty()
+        with skeleton_placeholder.container():
+            render_loading_skeleton()
+        with st.spinner("Refreshing data from FPL API..."):
+            data = load_all_data(int(team_id_input), refresh=refresh)
         skeleton_placeholder.empty()
-        st.error(f"Failed to load data: {e}")
-        st.info("Check your team ID and internet connection, then click Run Analysis.")
-        st.stop()
-skeleton_placeholder.empty()
+    else:
+        data = load_all_data(int(team_id_input), refresh=refresh)
+except Exception as e:
+    st.error(f"Failed to load data: {e}")
+    st.info("Check your team ID and internet connection, then click Refresh Data.")
+    st.stop()
 
 # Unpack
 bootstrap    = data["bootstrap"]
 fixtures_df  = data["fixtures_df"]
 current_gw   = data["current_gw"]
+team_data    = data.get("team_data", {})
 transfer_info= data["transfer_info"]
 enriched_df  = data["enriched_df"]
 my_team      = data["my_team"]
@@ -1009,6 +2120,10 @@ xi_result    = data["xi_result"]
 chip_info    = data["chip_info"]
 rmse_map     = data["rmse_map"]
 history_df   = data["history_df"]
+feature_capabilities = data.get("feature_capabilities", get_feature_capabilities())
+advanced_pipeline_enabled = bool(data.get("advanced_pipeline_enabled", False))
+advanced_pipeline_error = str(data.get("advanced_pipeline_error", "") or "")
+cs_prob_map = data.get("cs_prob_map")
 
 schema_issues = verify_runtime_schema(my_team, others, fixtures_df)
 if schema_issues:
@@ -1022,12 +2137,6 @@ transfers_made = transfer_info["transfers_made"]
 available_chips = chip_info.get("available_chips", [])
 triple_captain = "Triple Captain" in available_chips
 bench_boost    = "Bench Boost" in available_chips
-
-render_section_header(f"GW{current_gw+1} Decision Center")
-ctx1, ctx2, ctx3 = st.columns(3)
-ctx1.caption(f"Bank £{bank_balance:.1f}M")
-ctx2.caption("1 FT" if transfers_made == 0 else "FT Used")
-ctx3.caption(f"{len(available_chips)} chips available")
 
 # Player news map
 players_raw = bootstrap["elements"]
@@ -1046,6 +2155,16 @@ for df in (my_team, others, enriched_df):
         df["player_face"] = df["player_id"].map(player_face_map).fillna("")
     if "team_id" in df.columns:
         df["team_badge"] = df["team_id"].map(team_badge_map).fillna("")
+
+try:
+    value_breakdown = get_squad_value_breakdown(my_team, bootstrap, team_data)
+except Exception:
+    value_breakdown = pd.DataFrame()
+squad_sell_value = (
+    float(value_breakdown["sell_price"].sum())
+    if isinstance(value_breakdown, pd.DataFrame) and not value_breakdown.empty and "sell_price" in value_breakdown.columns
+    else float(pd.to_numeric(my_team.get("price", 0), errors="coerce").fillna(0).sum())
+)
 
 if show_qa_panel:
     snap = build_ui_health_snapshot()
@@ -1070,26 +2189,273 @@ if show_qa_panel:
                     "delta": "Runtime validation",
                     "tone": "positive" if len(schema_issues) == 0 else "danger",
                 },
+                {
+                    "label": "Adv Pipeline",
+                    "value": "On" if advanced_pipeline_enabled else "Fallback",
+                    "delta": "v5 enrichment active" if advanced_pipeline_enabled else (advanced_pipeline_error[:42] or "Baseline pipeline"),
+                    "tone": "positive" if advanced_pipeline_enabled else "warning",
+                },
             ],
-            compact=compact_layout,
+            compact=False,
         )
+        st.caption(
+            "Capabilities: "
+            + ", ".join([f"{k}={'Y' if bool(v) else 'N'}" for k, v in sorted(feature_capabilities.items())])
+        )
+        adv_enriched = summarize_advanced_columns(enriched_df)
+        adv_my = summarize_advanced_columns(my_team)
+        adv_others = summarize_advanced_columns(others)
+        render_stat_cards(
+            [
+                {"label": "Enriched Adv Cols", "value": f"{adv_enriched['present']}/{len(ADVANCED_METRIC_COLUMNS)}", "delta": ", ".join(adv_enriched.get("present_cols", [])[:3]) or "None", "tone": "positive" if adv_enriched["present"] >= 4 else "warning"},
+                {"label": "My Team Adv Cols", "value": f"{adv_my['present']}/{len(ADVANCED_METRIC_COLUMNS)}", "delta": "Expected page inputs", "tone": "positive" if adv_my["present"] >= 4 else "warning"},
+                {"label": "Pool Adv Cols", "value": f"{adv_others['present']}/{len(ADVANCED_METRIC_COLUMNS)}", "delta": "Explorer/transfer pool", "tone": "positive" if adv_others["present"] >= 4 else "warning"},
+            ]
+        )
+        with st.expander("Advanced Runtime Diagnostics", expanded=False):
+            st.markdown("**Missing advanced columns (enriched_df):** " + (", ".join(adv_enriched["missing"]) if adv_enriched["missing"] else "None"))
+            page_ready_df = build_page_readiness_table(my_team, others, enriched_df, feature_capabilities)
+            st.dataframe(page_ready_df, use_container_width=True, hide_index=True)
+            st.markdown("**Manual runtime checks (recommended order):**")
+            st.markdown("1. Captain Picker: confirm `captain_ev` ranking + Monte Carlo + Differential tables render.")
+            st.markdown("2. Transfer Planner: confirm Horizon Plan and Double Hit (-8) tab render with data.")
+            st.markdown("3. My Squad / Player Explorer: confirm xPts, Q10/Q90, Price Δ columns appear.")
+            st.markdown("4. AI Analyst: ask a question and inspect Sources & Confidence + response quality with xPts context.")
         st.caption("Use compact layout for 768/430/390 widths during manual UI checks.")
 
 
-if page == "My Squad":
+if page == "Home":
+    render_page_hero(
+        "Weekly Decision Snapshot",
+        "Your next-GW recommendation layer with transfer, captaincy, risk, and deadline context.",
+        [
+            f"GW{current_gw+1}",
+            f"FT {'1' if transfers_made == 0 else 'Used'}",
+            f"Chips {len(available_chips)}",
+            f"Bank £{bank_balance:.1f}M",
+        ],
+    )
 
-    render_section_header(f"GW{current_gw} Completed -> Optimized for GW{current_gw+1}")
+    render_section_header("Decision Snapshot")
+
+    projected_xi = (
+        float(xi_result["starting_xi"].apply(lambda r: _xpts(r), axis=1).sum())
+        if xi_result and "starting_xi" in xi_result and not xi_result["starting_xi"].empty
+        else float(my_team.apply(lambda r: _xpts(r), axis=1).sum())
+    )
+    bench_cover = (
+        float(xi_result["bench"].apply(lambda r: _xpts(r), axis=1).sum())
+        if xi_result and "bench" in xi_result and not xi_result["bench"].empty
+        else 0.0
+    )
+
+    # Transfer decision (same backend logic as Transfer Planner, lightweight summary)
+    try:
+        home_ilp_1 = cached_ilp_transfers(my_team, others, float(bank_balance), n_transfers=1)
+        home_roll = get_rolling_transfer_advice(
+            my_team, others, bank_balance, transfers_made,
+            chip_info, current_gw, ilp_result=home_ilp_1
+        )
+        home_hits = get_hit_transfer_analysis(my_team, others, bank_balance, transfers_made)
+        transfer_call = str(home_roll.get("recommendation", "HOLD"))
+        transfer_conf = compute_transfer_decision_confidence(transfer_call, home_ilp_1, home_hits)
+        transfer_reasons = home_roll.get("reasons", [])
+    except Exception:
+        transfer_call = "HOLD"
+        transfer_conf = 52.0
+        transfer_reasons = []
+
+    # Captain decision (same scoring logic as Captain page, summary only)
+    cap_df_home = my_team.copy()
+    if "p_plays_full" in cap_df_home.columns:
+        cap_df_home["reliability"] = cap_df_home["p_plays_full"].fillna(1.0).astype(float)
+    else:
+        cap_df_home["reliability"] = (
+            cap_df_home["player_id"].astype("Int64").map(chance_map).fillna(100).astype(float) / 100.0
+        )
+    cap_df_home["xpts_score"] = cap_df_home.apply(
+        lambda r: xpts_captain_score(r, triple_captain), axis=1
+    )
+    blank_mask_home = (
+        cap_df_home["is_blank_next_gw"].fillna(False).astype(bool)
+        if "is_blank_next_gw" in cap_df_home.columns
+        else pd.Series(False, index=cap_df_home.index)
+    )
+    cap_pool_home = cap_df_home[~blank_mask_home]
+    if not cap_pool_home.empty:
+        if "captain_ev" in cap_pool_home.columns:
+            top_cap_home = cap_pool_home.nlargest(1, "captain_ev").iloc[0]
+            captain_return = float(top_cap_home.get("captain_ev", 0.0))
+        else:
+            top_cap_home = cap_pool_home.nlargest(1, "xpts_score").iloc[0]
+            captain_return = float(_xpts(top_cap_home)) * 2.0
+        captain_pick = str(top_cap_home["player_name"])
+    else:
+        captain_pick = "No clear captain"
+        captain_return = 0.0
+
+    primary_transfer_map = {
+        "USE NOW": "Make the transfer now",
+        "BORDERLINE": "Wait for final team news before moving",
+        "HOLD": "Roll your transfer this week",
+    }
+    transfer_action = primary_transfer_map.get(transfer_call, f"Transfer plan: {transfer_call}")
+
+    render_decision_banner(
+        title=f"GW{current_gw+1} Decision Snapshot",
+        primary_action=f"{transfer_action} · Captain {captain_pick}",
+        confidence=float(np.clip((transfer_conf + 64.0) / 2.0, 35, 90)),
+        reasons=[
+            f"Projected XI xPts: {projected_xi:.1f}",
+            f"Expected captain return: {captain_return:.1f}",
+            transfer_reasons[0] if transfer_reasons else f"Bench cover: {bench_cover:.1f} pts",
+        ],
+        risk_level="Low" if transfer_call == "USE NOW" else "Medium" if transfer_call == "BORDERLINE" else "High",
+    )
+
+    render_stat_cards(
+        [
+            {"label": "Projected xPts" if "expected_pts" in my_team.columns else "Projected Score", "value": f"{projected_xi:.1f}", "delta": "Optimized XI projection", "tone": "positive"},
+            {"label": "Transfer Decision", "value": transfer_call, "delta": f"Signal confidence {transfer_conf:.0f}%", "tone": "neutral"},
+            {"label": "Captain Pick", "value": captain_pick, "delta": f"{'Cap EV' if 'captain_ev' in my_team.columns else 'Expected return'} {captain_return:.1f}", "tone": "positive"},
+        ],
+        compact=False,
+    )
+
+    left_main, right_meta = st.columns([1.45, 1.0], gap="large")
+
+    with left_main:
+        render_section_header("Top Risks")
+    risk_items = []
+    for _, row in my_team.iterrows():
+        pid = int(row.get("player_id", 0))
+        player_name = str(row.get("player_name", "Unknown"))
+        chance = chance_map.get(pid)
+        if chance is not None and float(chance) < 85:
+            sev = 100 - float(chance)
+            level = "High" if float(chance) < 60 else "Medium"
+            risk_items.append(
+                {
+                    "Risk": f"{player_name}: availability {int(chance)}%",
+                    "Level": level,
+                    "Why it matters": (news_map.get(pid, "") or "Low chance of appearing this GW."),
+                    "score": sev,
+                }
+            )
+        if bool(row.get("is_blank_next_gw", False)) or int(row.get("blank_gws", 0) or 0) > 0:
+            risk_items.append(
+                {
+                    "Risk": f"{player_name}: blank fixture risk",
+                    "Level": "High",
+                    "Why it matters": "Potential zero this GW without bench cover.",
+                    "score": 35,
+                }
+            )
+
+    if bench_cover < 6.0:
+        risk_items.append(
+            {
+                "Risk": f"Bench depth is low ({bench_cover:.1f} pts)",
+                "Level": "Medium" if bench_cover >= 4.0 else "High",
+                "Why it matters": "If a starter misses out, replacement upside is limited.",
+                "score": 20 if bench_cover >= 4.0 else 30,
+            }
+        )
+
+    if risk_items:
+        risk_df = (
+            pd.DataFrame(risk_items)
+            .sort_values(["score", "Level"], ascending=[False, True])
+            .drop(columns=["score"])
+            .head(3)
+        )
+        with left_main:
+            render_insight_table(risk_df, row_density="compact")
+    else:
+        with left_main:
+            st.success("No major risks detected in your current setup.")
+
+    with right_meta:
+        render_section_header("Operational Context")
+        next_event = next(
+            (e for e in bootstrap.get("events", []) if int(e.get("id", 0)) == int(current_gw + 1)),
+            None,
+        )
+        deadline_raw = next_event.get("deadline_time", "") if next_event else ""
+        deadline_ts = pd.to_datetime(deadline_raw, utc=True, errors="coerce") if deadline_raw else pd.NaT
+        now_utc = pd.Timestamp.utcnow()
+        if pd.notna(deadline_ts):
+            hours_left = float((deadline_ts - now_utc).total_seconds() / 3600.0)
+            if hours_left < 0:
+                deadline_state = "Passed"
+            elif hours_left <= 6:
+                deadline_state = "Urgent"
+            elif hours_left <= 24:
+                deadline_state = "Soon"
+            else:
+                deadline_state = "Comfortable"
+            deadline_text = deadline_ts.strftime("%Y-%m-%d %H:%M UTC")
+            hours_text = "Closed" if hours_left < 0 else f"{hours_left:.1f}h"
+        else:
+            deadline_state = "Unknown"
+            deadline_text = "Unknown"
+            hours_text = "N/A"
+
+        home_refresh_dt = datetime.fromisoformat(st.session_state["data_refreshed_at"])
+        refresh_age_min = max(0.0, (datetime.now() - home_refresh_dt).total_seconds() / 60.0)
+        refresh_state = "Fresh" if refresh_age_min <= 5 else "Stale"
+
+        d1, d2, d3 = st.columns(1), st.columns(1), st.columns(1)
+        d1, d2, d3 = d1[0], d2[0], d3[0]
+        d1.metric("Next Deadline", deadline_text, f"GW{current_gw+1} · {deadline_state}")
+        d2.metric("Time Remaining", hours_text, "Until deadline")
+        d3.metric("Last Refresh", home_refresh_dt.strftime("%Y-%m-%d %H:%M:%S"), f"{refresh_state} · {refresh_age_min:.0f} min ago")
+
+        st.markdown(
+            """
+            <div class='fpl-card' style='padding:0.8rem 0.95rem; margin-top:0.65rem;'>
+                <div class='kpi-label'>NEXT STEPS</div>
+                <div style='font-size:0.82rem; color:var(--muted); line-height:1.5;'>
+                    Open Transfer Planner to validate moves, then Captain Picker for final armband confirmation.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.caption("Open My Squad, Transfer Planner, and Captain Picker for full detail.")
+
+
+elif page == "My Squad":
+    render_page_hero(
+        "My Squad",
+        "Optimize your XI, review bench cover, and identify availability risks before locking in your team.",
+        [
+            f"GW{current_gw+1} prep",
+            f"Bank £{bank_balance:.1f}M",
+            "Optimized XI",
+            "Bench + injury review",
+        ],
+    )
+
+    render_section_header(f"GW{current_gw} Completed → Optimized for GW{current_gw+1}")
 
     squad_val   = my_team["price"].sum()
-    pred_total  = (xi_result["starting_xi"]["predicted_pts"].sum()
-                   if xi_result else my_team["predicted_pts"].sum())
-    lo, hi = (compute_score_range(xi_result["starting_xi"], rmse_map)
-              if xi_result else (0, 0))
+    pred_total  = (xi_result["starting_xi"].apply(lambda r: _xpts(r), axis=1).sum()
+                   if xi_result and "starting_xi" in xi_result else my_team.apply(lambda r: _xpts(r), axis=1).sum())
+    if xi_result:
+        _score_range = compute_score_range(xi_result["starting_xi"], rmse_map)
+        if isinstance(_score_range, (tuple, list)) and len(_score_range) >= 2:
+            lo, hi = float(_score_range[0]), float(_score_range[1])
+        else:
+            lo, hi = 0.0, 0.0
+    else:
+        lo, hi = 0.0, 0.0
     ft_label = "Free Transfer" if transfers_made == 0 else "Used"
     risk_players = int((my_team.get("blank_gws", 0) > 0).sum()) + int(
         (my_team["player_id"].map(chance_map).fillna(100) < 75).sum()
     )
-    bench_cover = float(xi_result["bench"]["predicted_pts"].sum()) if xi_result and not xi_result["bench"].empty else 0.0
+    bench_cover = float(xi_result["bench"].apply(lambda r: _xpts(r), axis=1).sum()) if xi_result and not xi_result["bench"].empty else 0.0
     confidence = float(np.clip(84 - risk_players * 5, 35, 90))
     render_decision_banner(
         title="My Squad Decision",
@@ -1104,13 +2470,22 @@ if page == "My Squad":
     )
     render_stat_cards(
         [
-            {"label": "Expected Pts", "value": f"{pred_total:.1f}", "delta": "Starting XI projection", "tone": "positive"},
+            {"label": "Expected Pts" if "expected_pts" in my_team.columns else "Predicted Pts", "value": f"{pred_total:.1f}", "delta": "Starting XI projection", "tone": "positive"},
             {"label": "Risk-Adjusted", "value": f"{max(pred_total - 0.4 * risk_players, 0):.1f}", "delta": "Availability-adjusted", "tone": "neutral"},
             {"label": "Players at Risk", "value": str(risk_players), "delta": "Blanks + low availability", "tone": "warning" if risk_players <= 3 else "danger"},
             {"label": "Bench Cover", "value": f"{bench_cover:.1f}", "delta": "First backup strength", "tone": "neutral"},
             {"label": "Bank", "value": f"£{bank_balance:.1f}M", "delta": ft_label, "tone": "positive"},
         ],
-        compact=compact_layout,
+        compact=False,
+    )
+    if xi_result and "formation" in xi_result:
+        render_stat_cards(
+            [
+                {"label": "Formation", "value": str(xi_result.get("formation", "Best XI")), "delta": "Current optimized shape", "tone": "neutral"},
+                {"label": "Score Range", "value": f"{float(lo):.1f} - {float(hi):.1f}", "delta": "Model uncertainty band", "tone": "warning"},
+            {"label": "Squad Value", "value": f"£{float(squad_val):.1f}M", "delta": "Current squad cost", "tone": "positive"},
+            {"label": "Sell Value", "value": f"£{float(squad_sell_value):.1f}M", "delta": "Sell-price estimate", "tone": "neutral"},
+        ]
     )
 
     st.divider()
@@ -1138,128 +2513,161 @@ if page == "My Squad":
             unsafe_allow_html=True,
         )
 
-        if compact_layout:
-            st.caption("8+ pts elite | 5-7 pts strong | 3-4 pts playable | <3 pts risky | C captain | VC vice")
-        else:
-            l1, l2, l3, l4 = st.columns(4)
-            l1.markdown("`8+ pts` elite")
-            l2.markdown("`5-7 pts` strong")
-            l3.markdown("`3-4 pts` playable")
-            l4.markdown("`<3 pts` risky · `C` captain · `VC` vice")
+        l1, l2, l3, l4 = st.columns(4)
+        l1.markdown("`8+ pts` elite")
+        l2.markdown("`5-7 pts` strong")
+        l3.markdown("`3-4 pts` playable")
+        l4.markdown("`<3 pts` risky · `C` captain · `VC` vice")
         alt_forms = score_all_formations(my_team)
         if alt_forms:
-            alt_df = pd.DataFrame(alt_forms)[["formation", "pred_pts", "combined"]].head(5).copy()
-            best_pts = float(alt_df["pred_pts"].max()) if not alt_df.empty else 0.0
-            alt_df["delta_vs_best"] = alt_df["pred_pts"] - best_pts
-            alt_df = alt_df.rename(columns={
-                "formation": "Formation",
-                "pred_pts": "Predicted Pts",
-                "combined": "Combined Score",
-                "delta_vs_best": "Delta vs Best",
-            })
-            render_section_header("Formation Alternatives")
-            render_insight_table(
-                alt_df,
-                default_sort=("Predicted Pts", False),
-                row_density="compact",
-                column_config={
-                    "Predicted Pts": st.column_config.NumberColumn(format="%.2f"),
-                    "Combined Score": st.column_config.NumberColumn(format="%.2f"),
-                    "Delta vs Best": st.column_config.NumberColumn(format="%+.2f"),
-                },
-            )
+            with st.expander("Formation alternatives", expanded=False):
+                alt_df = pd.DataFrame(alt_forms)[["formation", "pred_pts", "combined"]].head(5).copy()
+                best_pts = float(alt_df["pred_pts"].max()) if not alt_df.empty else 0.0
+                alt_df["delta_vs_best"] = alt_df["pred_pts"] - best_pts
+                alt_df = alt_df.rename(columns={
+                    "formation": "Formation",
+                    "pred_pts": "Predicted Pts",
+                    "combined": "Combined Score",
+                    "delta_vs_best": "Delta vs Best",
+                })
+                render_insight_table(
+                    alt_df,
+                    default_sort=("Predicted Pts", False),
+                    row_density="compact",
+                    column_config={
+                        "Predicted Pts": st.column_config.NumberColumn(format="%.2f"),
+                        "Combined Score": st.column_config.NumberColumn(format="%.2f"),
+                        "Delta vs Best": st.column_config.NumberColumn(format="%+.2f"),
+                    },
+                )
 
     st.divider()
 
     if xi_result and not xi_result["bench"].empty:
-        render_section_header("Bench")
-        bench_cols = st.columns(2 if compact_layout else 4)
-        for i, (_, row) in enumerate(xi_result["bench"].iterrows()):
-            with bench_cols[i % len(bench_cols)]:
-                chance = chance_map.get(int(row["player_id"]))
-                badge  = ("Red" if chance is not None and chance < 75 else
-                          "Amber" if chance is not None and chance < 100 else "Green")
-                subtitle = (
-                    f"{row['position']} · £{row['price']:.1f}M · {row['predicted_pts']} pts · "
-                    f"{badge} {f'{chance}%' if chance is not None else '100%'}"
-                )
-                st.markdown(f"""
-                <div class='fpl-card'>
-                    <div style='font-size:0.7rem; color:#37b6ff;
-                                font-family: Space Mono; margin-bottom:0.3rem;'>
-                        #{i+1} {'Emergency GK' if row['position']=='Goalkeeper'
-                               else 'First Sub' if i==0 else ''}
+        with st.expander("Bench details", expanded=False):
+            bench_cols = st.columns(4)
+            for i, (_, row) in enumerate(xi_result["bench"].iterrows()):
+                with bench_cols[i % len(bench_cols)]:
+                    chance = chance_map.get(int(row["player_id"]))
+                    badge  = ("Red" if chance is not None and chance < 75 else
+                              "Amber" if chance is not None and chance < 100 else "Green")
+                    p_full = float(row.get("p_plays_full", (chance / 100 if chance is not None else 1.0)) or 1.0)
+                    pchg = float(row.get("predicted_price_change", 0) or 0)
+                    subtitle = (
+                        f"{row['position']} · £{row['price']:.1f}M · {_xpts(row):.2f} xPts · "
+                        f"{badge} {f'{chance}%' if chance is not None else '100%'} · Full {p_full:.0%}{_price_tag(pchg)}"
+                    )
+                    st.markdown(f"""
+                    <div class='fpl-card'>
+                        <div style='font-size:0.7rem; color:var(--accent);
+                                    font-family: Space Mono; margin-bottom:0.3rem;'>
+                            #{i+1} {'Emergency GK' if row['position']=='Goalkeeper'
+                                   else 'First Sub' if i==0 else ''}
+                        </div>
+                        {player_identity_html(
+                            row['player_name'],
+                            row.get('team_name', ''),
+                            row.get('player_face', player_face_map.get(int(row['player_id']), '')),
+                            row.get('team_badge', team_badge_map.get(int(row.get('team_id', 0)), '')),
+                            subtitle,
+                            'player-face-sm',
+                        )}
                     </div>
-                    {player_identity_html(
-                        row['player_name'],
-                        row.get('team_name', ''),
-                        row.get('player_face', player_face_map.get(int(row['player_id']), '')),
-                        row.get('team_badge', team_badge_map.get(int(row.get('team_id', 0)), '')),
-                        subtitle,
-                        'player-face-sm',
-                    )}
-                </div>
-                """, unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
 
     st.divider()
 
-    render_section_header("Full Squad Stats")
+    with st.expander("Detailed squad tables", expanded=False):
+        render_section_header("Full Squad Stats")
 
-    disp = my_team[[
-        "player_face", "team_badge", "player_name", "position", "team_name", "price",
-        "predicted_pts", "combined_score", "avg_difficulty",
-        "fixture_run_label", "blank_gws", "double_gws"
-    ]].copy()
-    disp["ownership"] = disp.index.map(
-        lambda i: f"{ownership_map.get(int(my_team.loc[i,'player_id']), 0):.1f}%"
-        if i in my_team.index else "?"
-    )
-    disp = disp.rename(columns={
-        "player_face": "Face",
-        "team_badge": "Badge",
-        "player_name": "Player", "position": "Pos",
-        "team_name": "Team", "price": "£",
-        "predicted_pts": "Pred", "combined_score": "5GW Score",
-        "avg_difficulty": "Avg Diff", "fixture_run_label": "Run",
-        "blank_gws": "Blanks", "double_gws": "DGWs",
-        "ownership": "Owned%"
-    }).sort_values("Pred", ascending=False)
+        disp_cols = [
+            "player_face", "team_badge", "player_name", "position", "team_name", "price",
+            "predicted_pts"
+        ]
+        if "expected_pts" in my_team.columns:
+            disp_cols.append("expected_pts")
+        if "pts_low" in my_team.columns and "pts_high" in my_team.columns:
+            disp_cols += ["pts_low", "pts_high"]
+        disp_cols += ["combined_score", "avg_difficulty", "fixture_run_label", "blank_gws", "double_gws"]
+        if "predicted_price_change" in my_team.columns:
+            disp_cols.append("predicted_price_change")
+        disp = my_team[disp_cols].copy()
+        disp["ownership"] = disp.index.map(
+            lambda i: f"{ownership_map.get(int(my_team.loc[i,'player_id']), 0):.1f}%"
+            if i in my_team.index else "?"
+        )
+        disp = disp.rename(columns={
+            "player_face": "Face",
+            "team_badge": "Badge",
+            "player_name": "Player", "position": "Pos",
+            "team_name": "Team", "price": "£",
+            "predicted_pts": "Pred", "expected_pts": "xPts", "pts_low": "Q10", "pts_high": "Q90",
+            "predicted_price_change": "Price Δ", "combined_score": "5GW Score",
+            "avg_difficulty": "Avg Diff", "fixture_run_label": "Run",
+            "blank_gws": "Blanks", "double_gws": "DGWs",
+            "ownership": "Owned%"
+        }).sort_values("xPts" if "xPts" in disp.rename(columns={"expected_pts": "xPts"}).columns else "Pred", ascending=False)
 
-    st.dataframe(disp, use_container_width=True, hide_index=True,
-                 column_config={
-                     "Face": st.column_config.ImageColumn("Face", width="small"),
-                     "Badge": st.column_config.ImageColumn("Badge", width="small"),
-                     "Pred": st.column_config.NumberColumn(format="%.2f"),
-                     "5GW Score": st.column_config.NumberColumn(format="%.2f"),
-                     "Avg Diff": st.column_config.NumberColumn(format="%.1f"),
-                     "£": st.column_config.NumberColumn(format="£%.1f"),
-                 })
+        st.dataframe(disp, use_container_width=True, hide_index=True,
+                     column_config={
+                         "Face": st.column_config.ImageColumn("Face", width="small"),
+                         "Badge": st.column_config.ImageColumn("Badge", width="small"),
+                         "Pred": st.column_config.NumberColumn(format="%.2f"),
+                         "xPts": st.column_config.NumberColumn(format="%.2f"),
+                         "Q10": st.column_config.NumberColumn(format="%.2f"),
+                         "Q90": st.column_config.NumberColumn(format="%.2f"),
+                         "5GW Score": st.column_config.NumberColumn(format="%.2f"),
+                         "Avg Diff": st.column_config.NumberColumn(format="%.1f"),
+                         "£": st.column_config.NumberColumn(format="£%.1f"),
+                     })
 
-    injury_players = [
-        (row["player_name"], chance_map.get(int(row["player_id"])),
-         news_map.get(int(row["player_id"]), ""))
-        for _, row in my_team.iterrows()
-        if chance_map.get(int(row["player_id"])) is not None
-        and chance_map.get(int(row["player_id"])) < 100
-    ]
-    if injury_players:
-        st.divider()
-        render_section_header("Injury & Availability Urgency")
-        inj_df = pd.DataFrame(
-            [
-                {
-                    "Player": n,
-                    "Chance %": int(c or 0),
-                    "Urgency": "High" if (c or 0) < 60 else "Medium" if (c or 0) < 85 else "Low",
-                    "Notes": news or "No news available",
-                }
-                for n, c, news in injury_players
-            ]
-        ).sort_values(["Chance %", "Player"], ascending=[True, True])
-        render_insight_table(inj_df, default_sort=("Chance %", True), row_density="compact")
+        if not value_breakdown.empty:
+            st.divider()
+            render_section_header("Sell Price Breakdown")
+            vb_cols = [c for c in ["player_name", "buy_price", "current_price", "sell_price"] if c in value_breakdown.columns]
+            if vb_cols:
+                vb = value_breakdown[vb_cols].copy().rename(columns={
+                    "player_name": "Player",
+                    "buy_price": "Buy £",
+                    "current_price": "Current £",
+                    "sell_price": "Sell £",
+                })
+                render_insight_table(vb, row_density="compact")
+
+        injury_players = [
+            (row["player_name"], chance_map.get(int(row["player_id"])),
+             news_map.get(int(row["player_id"]), ""))
+            for _, row in my_team.iterrows()
+            if chance_map.get(int(row["player_id"])) is not None
+            and chance_map.get(int(row["player_id"])) < 100
+        ]
+        if injury_players:
+            st.divider()
+            render_section_header("Injury & Availability Urgency")
+            inj_df = pd.DataFrame(
+                [
+                    {
+                        "Player": n,
+                        "Chance %": int(c or 0),
+                        "Urgency": "High" if (c or 0) < 60 else "Medium" if (c or 0) < 85 else "Low",
+                        "Notes": news or "No news available",
+                    }
+                    for n, c, news in injury_players
+                ]
+            ).sort_values(["Chance %", "Player"], ascending=[True, True])
+            render_insight_table(inj_df, default_sort=("Chance %", True), row_density="compact")
 
 
 elif page == "Fixture Planner":
+    render_page_hero(
+        "Fixture Planner",
+        "Scan fixture turns, blank risk, and near-term opportunities before transfer decisions.",
+        [
+            f"Live GW window from GW{current_gw+1}",
+            "Heatmap + Compare",
+            "Fixture-driven shortlist",
+        ],
+    )
 
     render_section_header("Fixture Difficulty Heatmap")
 
@@ -1282,25 +2690,22 @@ elif page == "Fixture Planner":
         "Custom": [],
     }
     show_all_teams = False
-    if compact_layout:
-        c1, c2 = st.columns(2)
-        with c1:
-            position_filter = st.multiselect(
-                "Filter by position",
-                ["Goalkeeper", "Defender", "Midfielder", "Forward"],
-                default=["Midfielder", "Forward"],
-            )
-        with c2:
-            show_all_teams = st.toggle("Show all 20 teams", value=False)
-        c3, c4 = st.columns(2)
-        with c3:
-            gw_start, gw_end = st.select_slider(
-                "GW range",
-                options=future_gws,
-                value=(default_start, default_end),
-            )
-        with c4:
-            sort_mode = st.selectbox("Sort mode", ["Easiest overall", "Easiest next 2", "Blank risk"])
+    render_section_header("Filters")
+    col1, col2, col3, col4 = st.columns([2, 1.4, 1, 1.2])
+    with col1:
+        position_filter = st.multiselect(
+            "Filter by position",
+            ["Goalkeeper", "Defender", "Midfielder", "Forward"],
+            default=["Midfielder", "Forward"],
+        )
+    with col3:
+        show_all_teams = st.toggle("Show all 20 teams", value=False)
+        gw_start, gw_end = st.select_slider(
+            "GW range",
+            options=future_gws,
+            value=(default_start, default_end),
+        )
+    with col2:
         preset = st.selectbox("Team preset", list(preset_map.keys()))
         custom_team_selection = st.multiselect(
             "Custom teams",
@@ -1308,31 +2713,8 @@ elif page == "Fixture Planner":
             default=preset_map.get(preset, []),
             disabled=show_all_teams,
         )
-    else:
-        col1, col2, col3, col4 = st.columns([2, 1.4, 1, 1.2])
-        with col1:
-            position_filter = st.multiselect(
-                "Filter by position",
-                ["Goalkeeper", "Defender", "Midfielder", "Forward"],
-                default=["Midfielder", "Forward"],
-            )
-        with col3:
-            show_all_teams = st.toggle("Show all 20 teams", value=False)
-            gw_start, gw_end = st.select_slider(
-                "GW range",
-                options=future_gws,
-                value=(default_start, default_end),
-            )
-        with col2:
-            preset = st.selectbox("Team preset", list(preset_map.keys()))
-            custom_team_selection = st.multiselect(
-                "Custom teams",
-                all_team_names,
-                default=preset_map.get(preset, []),
-                disabled=show_all_teams,
-            )
-        with col4:
-            sort_mode = st.selectbox("Sort mode", ["Easiest overall", "Easiest next 2", "Blank risk"])
+    with col4:
+        sort_mode = st.selectbox("Sort mode", ["Easiest overall", "Easiest next 2", "Blank risk"])
 
     # Build fixture heatmap data
     gws = [gw for gw in future_gws if gw_start <= gw <= gw_end]
@@ -1340,6 +2722,13 @@ elif page == "Fixture Planner":
     if gw_count == 0:
         st.info("Selected GW range contains no fixtures. Pick a wider range.")
         st.stop()
+    render_stat_cards(
+        [
+            {"label": "GW Window", "value": f"{gw_count}", "delta": f"GW{gw_start} to GW{gw_end}", "tone": "neutral"},
+            {"label": "All Teams", "value": "Yes" if show_all_teams else "Filtered", "delta": "Display mode", "tone": "positive" if show_all_teams else "neutral"},
+            {"label": "Sort", "value": sort_mode, "delta": "Ranking rule", "tone": "neutral"},
+        ]
+    )
 
     if show_all_teams:
         display_teams = teams_df2["name"].tolist()
@@ -1428,19 +2817,11 @@ elif page == "Fixture Planner":
         blank_counts = [blank_counts[i] for i in order]
         next2 = [next2[i] for i in order]
 
-        if compact_layout:
-            r1c1, r1c2 = st.columns(2)
-            r1c1.metric("Best Run", display_teams[0], f"{avg_diffs[0]:.2f} avg diff")
-            r1c2.metric("Worst Run", display_teams[-1], f"{avg_diffs[-1]:.2f} avg diff")
-            r2c1, r2c2 = st.columns(2)
-            r2c1.metric("Total Blanks", sum(blank_counts), f"{len(gws)} GW window")
-            r2c2.metric("Teams Tracked", len(display_teams), "ranked easiest ? hardest")
-        else:
-            k1, k2, k3, k4 = st.columns(4)
-            k1.metric("Best Run", display_teams[0], f"{avg_diffs[0]:.2f} avg diff")
-            k2.metric("Worst Run", display_teams[-1], f"{avg_diffs[-1]:.2f} avg diff")
-            k3.metric("Total Blanks", sum(blank_counts), f"{len(gws)} GW window")
-            k4.metric("Teams Tracked", len(display_teams), "ranked easiest ? hardest")
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Best Run", display_teams[0], f"{avg_diffs[0]:.2f} avg diff")
+        k2.metric("Worst Run", display_teams[-1], f"{avg_diffs[-1]:.2f} avg diff")
+        k3.metric("Total Blanks", sum(blank_counts), f"{len(gws)} GW window")
+        k4.metric("Teams Tracked", len(display_teams), "ranked easiest → hardest")
 
         ranked = pd.DataFrame(
             {
@@ -1483,7 +2864,7 @@ elif page == "Fixture Planner":
             text=cell_labels,
             customdata=hover_meta,
             texttemplate="%{text}",
-            textfont=dict(size=10, color="#101217", family="Space Mono"),
+            textfont=dict(size=10, color=PLOTLY_TEXT, family="Space Mono"),
             hovertemplate=(
                 "<b>%{y}</b><br>"
                 "%{x}: %{customdata[0]} (%{customdata[2]})<br>"
@@ -1496,10 +2877,10 @@ elif page == "Fixture Planner":
             ygap=2,
             showscale=True,
             colorbar=dict(
-                title=dict(text="Difficulty", font=dict(color="#37b6ff")),
+                title=dict(text="Difficulty", font=dict(color=PLOTLY_ACCENT)),
                 tickvals=[1, 2, 3, 4, 5],
                 ticktext=["Easy", "2", "3", "4", "Hard"],
-                tickfont=dict(color="#eaf2ff"),
+                tickfont=dict(color=PLOTLY_TEXT),
             ),
         ))
 
@@ -1509,7 +2890,7 @@ elif page == "Fixture Planner":
             margin=dict(l=10, r=10, t=52, b=30),
             title=dict(
                 text=f"Fixture Radar · GW{gws[0]} to GW{gws[-1]}",
-                font=dict(color="#37b6ff", size=13, family="Space Mono"),
+                font=dict(color=PLOTLY_ACCENT, size=13, family="Space Mono"),
             ),
             dragmode=False,
         )
@@ -1600,6 +2981,15 @@ elif page == "Fixture Planner":
 
 
 elif page == "Transfer Planner":
+    render_page_hero(
+        "Transfer Planner",
+        "ILP-backed move suggestions, ranked scenarios, and before/after XI impact.",
+        [
+            f"Bank £{bank_balance:.1f}M",
+            "1 FT" if transfers_made == 0 else "FT Used",
+            f"Chips {len(available_chips)}",
+        ],
+    )
 
     render_section_header(
         f"Bank: £{bank_balance:.1f}M | "
@@ -1628,6 +3018,14 @@ elif page == "Transfer Planner":
         reasons=roll.get("reasons", []),
         risk_level=rec_risk,
     )
+    render_stat_cards(
+        [
+            {"label": "Recommendation", "value": rec, "delta": f"Confidence {rec_conf:.0f}%", "tone": "positive" if rec == "USE NOW" else "warning" if rec == "BORDERLINE" else "neutral"},
+            {"label": "1FT Gain (5GW)", "value": f"{float(ilp_1.get('total_gain', 0.0)):+.2f}", "delta": "Best single transfer", "tone": "positive"},
+            {"label": "2FT Gain (5GW)", "value": f"{float(ilp_2.get('total_gain', 0.0)):+.2f}", "delta": "Best double transfer", "tone": "neutral"},
+            {"label": "Hit Options", "value": str(len(hit_transfers or [])), "delta": "Break-even+ candidates", "tone": "warning" if len(hit_transfers or []) else "neutral"},
+        ]
+    )
 
     transfer_face_map = (
         enriched_df[["player_name", "player_face"]]
@@ -1653,8 +3051,9 @@ elif page == "Transfer Planner":
         t = ilp_1["transfers"][0]
         stack_candidates.append(
             {
+                "id": "safe",
                 "label": "Safe move",
-                "headline": f"{t['out_name']} -> {t['in_name']}",
+                "headline": f"{t['out_name']} → {t['in_name']}",
                 "now": float(ilp_1.get("total_next_gain", 0.0)),
                 "horizon": float(ilp_1.get("total_gain", 0.0)),
                 "cost": float(ilp_1.get("total_cost", 0.0)),
@@ -1665,8 +3064,9 @@ elif page == "Transfer Planner":
     if ilp_2.get("transfers"):
         stack_candidates.append(
             {
+                "id": "aggressive",
                 "label": "Aggressive move",
-                "headline": " + ".join([f"{x['out_name']} -> {x['in_name']}" for x in ilp_2["transfers"][:2]]),
+                "headline": " + ".join([f"{x['out_name']} → {x['in_name']}" for x in ilp_2["transfers"][:2]]),
                 "now": float(ilp_2.get("total_next_gain", 0.0)),
                 "horizon": float(ilp_2.get("total_gain", 0.0)),
                 "cost": float(ilp_2.get("total_cost", 0.0)),
@@ -1679,6 +3079,7 @@ elif page == "Transfer Planner":
         d = diff_df.iloc[0]
         stack_candidates.append(
             {
+                "id": "differential",
                 "label": "Differential move",
                 "headline": f"Buy {d['player_name']} ({d['ownership_pct']:.1f}% owned)",
                 "now": float(d.get("predicted_pts", 0.0)),
@@ -1690,27 +3091,93 @@ elif page == "Transfer Planner":
         )
     if stack_candidates:
         render_section_header("Recommendation Stack")
-        for c in stack_candidates[:3]:
-            raw_conf = 60 + 7 * max(0.0, c["horizon"] - c["now"])
-            conf = float(np.clip(raw_conf, 40, 88))
-            render_recommendation_card(
-                headline=f"{c['label']}: {c['headline']}",
-                impact_now=c["now"],
-                impact_horizon=c["horizon"],
-                confidence=conf,
-                risk_notes=c["risk"],
-                supporting_points=[*c["why"], f"Net cost: {c['cost']:+.1f}M"],
+
+        risk_penalty = {"safe": 0.0, "aggressive": 0.6, "differential": 0.4}
+        rec_alignment = {
+            "USE NOW": {"safe": 0.4, "aggressive": 0.5, "differential": 0.2},
+            "BORDERLINE": {"safe": 0.5, "aggressive": 0.1, "differential": 0.25},
+            "HOLD": {"safe": -0.2, "aggressive": -0.6, "differential": -0.3},
+            "ROLL": {"safe": -0.2, "aggressive": -0.6, "differential": -0.3},
+        }
+        align_map = rec_alignment.get(rec, {"safe": 0.0, "aggressive": 0.0, "differential": 0.0})
+        ranked = []
+        for c in stack_candidates:
+            utility = (
+                1.2 * float(c["now"])
+                + 0.9 * float(c["horizon"])
+                - risk_penalty.get(str(c.get("id", "")), 0.3)
+                + align_map.get(str(c.get("id", "")), 0.0)
             )
+            ranked.append((utility, c))
+        ranked.sort(key=lambda x: x[0], reverse=True)
+        primary = ranked[0][1]
+        alternatives = [c for _, c in ranked[1:]]
 
-    tab1, tab2, tab3 = st.tabs(["1 FT", "2 FT", "-4 Hit"])
+        raw_conf = 60 + 7 * max(0.0, primary["horizon"] - primary["now"])
+        conf = float(np.clip(raw_conf, 40, 88))
+        render_recommendation_card(
+            headline=f"Recommended: {primary['label']} · {primary['headline']}",
+            impact_now=primary["now"],
+            impact_horizon=primary["horizon"],
+            confidence=conf,
+            risk_notes=primary["risk"],
+            supporting_points=[*primary["why"], f"Net cost: {primary['cost']:+.1f}M"],
+        )
 
-    def _transfer_card_meta(tr: dict, fallback_next: float = 0.0) -> tuple[float, float, float, str, list[str]]:
+        if alternatives:
+            with st.expander("Alternative options (secondary)", expanded=False):
+                for c in alternatives[:2]:
+                    raw_conf = 60 + 7 * max(0.0, c["horizon"] - c["now"])
+                    conf = float(np.clip(raw_conf, 40, 88))
+                    render_recommendation_card(
+                        headline=f"{c['label']}: {c['headline']}",
+                        impact_now=c["now"],
+                        impact_horizon=c["horizon"],
+                        confidence=conf,
+                        risk_notes=c["risk"],
+                        supporting_points=[*c["why"], f"Net cost: {c['cost']:+.1f}M"],
+                    )
+
+    if feature_capabilities.get("horizon_plan") and get_horizon_transfer_plan:
+        with st.expander("Multi-GW Horizon Plan (2-GW lookahead)", expanded=False):
+            try:
+                horizon_plans = get_horizon_transfer_plan(my_team, others, enriched_df, bank_balance)
+                if not horizon_plans:
+                    st.info("No viable 2-GW transfer sequence found.")
+                else:
+                    for i, plan in enumerate(horizon_plans[:3], 1):
+                        st.markdown(f"**Plan {i}** · Total EV: `{float(plan.get('total_horizon_ev', 0.0)):+.2f}`")
+                        h1, h2 = st.columns(2)
+                        with h1:
+                            st.markdown(
+                                f"GW+1: `{plan.get('w1_out','?')}` → `{plan.get('w1_in','?')}`  "
+                                f"xPts `{float(plan.get('w1_xpts_gain',0.0)):+.2f}` · EV `{float(plan.get('w1_total_ev',0.0)):+.2f}` · "
+                                f"Run `{plan.get('w1_run','?')}` · Cost `£{float(plan.get('w1_cost',0.0)):+.1f}M`"
+                            )
+                        with h2:
+                            if str(plan.get("w2_in", "—")) not in {"—", "-", ""}:
+                                st.markdown(
+                                    f"GW+2: `{plan.get('w2_out','?')}` → `{plan.get('w2_in','?')}`  "
+                                    f"xPts `{float(plan.get('w2_xpts_gain',0.0)):+.2f}` · EV `{float(plan.get('w2_total_ev',0.0)):+.2f}` · "
+                                    f"Run `{plan.get('w2_run','?')}`"
+                                )
+                            else:
+                                st.markdown("GW+2: No strong follow-up move.")
+                        if i < min(3, len(horizon_plans)):
+                            st.divider()
+            except Exception as e:
+                st.caption(f"Horizon plan unavailable: {e}")
+
+    tab1, tab2, tab3, tab4 = st.tabs(["1 Transfer", "2 Transfers", "Take a Hit", "Double Hit (-8)"])
+
+    def _transfer_card_meta(tr: dict, fallback_next: float = 0.0) -> tuple[float, float, float, float, str, list[str]]:
         next_gain = float(tr.get("next_gain", fallback_next) or 0.0)
         horizon_gain = float(tr.get("gain", 0.0) or 0.0)
+        total_ev = float(tr.get("total_ev", horizon_gain) or horizon_gain)
         cost = float(tr.get("cost_diff", 0.0) or 0.0)
         is_blank = bool(tr.get("is_blank", False))
         has_dgw = float(tr.get("double_gws", 0) or 0) > 0
-        confidence = float(np.clip(58 + 10 * horizon_gain + 5 * next_gain - (12 if is_blank else 0) - (4 if cost > 1.5 else 0), 35, 92))
+        confidence = float(np.clip(58 + 10 * total_ev + 5 * next_gain - (12 if is_blank else 0) - (4 if cost > 1.5 else 0), 35, 92))
         if is_blank:
             risk_level = "High"
         elif cost > 2.0:
@@ -1726,16 +3193,19 @@ elif page == "Transfer Planner":
             risks.append("No DGW upside")
         if not risks:
             risks.append("Role/minutes variance")
-        return next_gain, horizon_gain, confidence, risk_level, risks
+        return next_gain, horizon_gain, total_ev, confidence, risk_level, risks
 
     with tab1:
         if ilp_1.get("transfers"):
             t = ilp_1["transfers"][0]
             blank_note = " | BLANK" if t.get("is_blank") else ""
             dgw_note   = " | DGW"   if t.get("double_gws",0) > 0 else ""
+            pchg_tag = _price_tag(float(t.get("price_change", 0) or 0))
+            urg_tag = " | Urgent" if float(t.get("urgency_score", 0) or 0) >= 2.0 else ""
             out_team = transfer_team_name_map.get(t['out_name'], "")
             in_team = transfer_team_name_map.get(t['in_name'], "")
-            if compact_layout:
+            col_a, col_b, col_c = st.columns([2, 1, 2])
+            with col_a:
                 st.markdown(f"""
                 <div class='transfer-card'>
                     <div class='kpi-label'>TRANSFER OUT</div>
@@ -1744,14 +3214,28 @@ elif page == "Transfer Planner":
                         out_team,
                         transfer_face_map.get(t['out_name'], ''),
                         transfer_badge_map.get(t['out_name'], ''),
-                        f"{t['position']} | Gain: +{t['gain']:.2f}",
+                        f"{t['position']} | EV: +{float(t.get('total_ev', t['gain'])):.2f}",
                         'player-face-sm'
                     )}
                 </div>
                 """, unsafe_allow_html=True)
+            with col_b:
                 st.markdown(f"""
-                <div class='transfer-card' style='border-color:#27e8a740;'>
-                    <div class='kpi-label'>TRANSFER IN</div>
+                <div style='text-align:center; padding-top:1.5rem;'>
+                    <div class='transfer-gain'>+{float(t.get('total_ev', t['gain'])):.2f}</div>
+                    <div style='font-size:0.65rem; color:var(--accent);
+                                font-family:Space Mono; letter-spacing:0.1em;'>
+                        TOTAL EV
+                    </div>
+                    <div style='font-size:0.8rem; color:var(--muted); margin-top:0.4rem;'>
+                        Cost: {t['cost_diff']:+.1f}M{pchg_tag}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            with col_c:
+                st.markdown(f"""
+                <div class='transfer-card' style='border-color:color-mix(in srgb, var(--primary) 28%, transparent);'>
+                    <div class='kpi-label'>TRANSFER IN{urg_tag}</div>
                     {player_identity_html(
                         t['in_name'],
                         in_team,
@@ -1762,61 +3246,19 @@ elif page == "Transfer Planner":
                     )}
                 </div>
                 """, unsafe_allow_html=True)
-            else:
-                col_a, col_b, col_c = st.columns([2, 1, 2])
-                with col_a:
-                    st.markdown(f"""
-                    <div class='transfer-card'>
-                        <div class='kpi-label'>TRANSFER OUT</div>
-                        {player_identity_html(
-                            t['out_name'],
-                            out_team,
-                            transfer_face_map.get(t['out_name'], ''),
-                            transfer_badge_map.get(t['out_name'], ''),
-                            f"{t['position']} | Gain: +{t['gain']:.2f}",
-                            'player-face-sm'
-                        )}
-                    </div>
-                    """, unsafe_allow_html=True)
-                with col_b:
-                    st.markdown(f"""
-                    <div style='text-align:center; padding-top:1.5rem;'>
-                        <div class='transfer-gain'>+{t['gain']:.2f}</div>
-                        <div style='font-size:0.65rem; color:#37b6ff;
-                                    font-family:Space Mono; letter-spacing:0.1em;'>
-                            5GW GAIN
-                        </div>
-                        <div style='font-size:0.8rem; color:#90a2be; margin-top:0.4rem;'>
-                            Cost: {t['cost_diff']:+.1f}M
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                with col_c:
-                    st.markdown(f"""
-                    <div class='transfer-card' style='border-color:#27e8a740;'>
-                        <div class='kpi-label'>TRANSFER IN</div>
-                        {player_identity_html(
-                            t['in_name'],
-                            in_team,
-                            transfer_face_map.get(t['in_name'], ''),
-                            transfer_badge_map.get(t['in_name'], ''),
-                            f"{t['position']} | {t['fixture_run']}{blank_note}{dgw_note}",
-                            'player-face-sm'
-                        )}
-                    </div>
-                    """, unsafe_allow_html=True)
 
-            t_next, t_horizon, t_conf, t_risk, t_risks = _transfer_card_meta(
+            t_next, t_horizon, t_ev, t_conf, t_risk, t_risks = _transfer_card_meta(
                 t,
                 fallback_next=float(ilp_1.get("total_next_gain", 0.0)),
             )
             render_recommendation_card(
-                headline=f"Transfer detail: {t['out_name']} -> {t['in_name']}",
+                headline=f"Transfer detail: {t['out_name']} → {t['in_name']}{pchg_tag}",
                 impact_now=t_next,
                 impact_horizon=t_horizon,
                 confidence=t_conf,
                 risk_notes=t_risks,
                 supporting_points=[
+                    f"Total EV: {t_ev:+.2f}",
                     f"Cost delta: £{float(t.get('cost_diff', 0.0)):+.1f}M",
                     f"Fixture run: {t.get('fixture_run', '?')}",
                     f"Risk level: {t_risk}",
@@ -1825,12 +3267,13 @@ elif page == "Transfer Planner":
 
             render_stat_cards(
                 [
+                    {"label": "Total EV", "value": f"+{float(ilp_1.get('total_ev', ilp_1.get('total_gain', 0.0))):.2f}", "delta": "xPts + price effects", "tone": "positive"},
                     {"label": "5GW Combined Gain", "value": f"+{ilp_1['total_gain']:.2f}", "delta": "Horizon impact", "tone": "positive"},
                     {"label": "Next GW Gain", "value": f"+{ilp_1['total_next_gain']:.2f}", "delta": "Immediate impact", "tone": "neutral"},
                     {"label": "Net Cost", "value": f"£{ilp_1['total_cost']:+.1f}M", "delta": "Budget delta", "tone": "warning" if ilp_1["total_cost"] > 0 else "positive"},
                     {"label": "Solver", "value": str(ilp_1.get("solver_status", "ILP")), "delta": "Optimization status", "tone": "neutral"},
                 ],
-                compact=compact_layout,
+                compact=False,
             )
 
             t = ilp_1["transfers"][0]
@@ -1841,9 +3284,37 @@ elif page == "Transfer Planner":
                 after_names.add(t["in_name"])
             in_count = len(after_names - before_names)
             out_count = len(before_names - after_names)
+
+            def _xi_chip_grid_html(names: set[str]) -> str:
+                chips = []
+                for nm in sorted(names):
+                    nm_s = _safe_text(nm)
+                    tm_s = _safe_text(transfer_team_name_map.get(nm, ""))
+                    face = _safe_text(transfer_face_map.get(nm, ""))
+                    badge = _safe_text(transfer_badge_map.get(nm, ""))
+                    chips.append(
+                        "<div style='display:flex; align-items:center; gap:0.38rem; "
+                        "padding:0.32rem 0.45rem; border:1px solid var(--line); border-radius:999px; "
+                        "background:var(--surface-soft); min-width:0;'>"
+                        f"<img class='player-face-sm' src='{face}' "
+                        "onerror=\"this.onerror=null;this.style.display='none';\" />"
+                        f"<img class='team-badge' src='{badge}' onerror=\"this.onerror=null;this.style.display='none';\" />"
+                        "<div style='min-width:0;'>"
+                        f"<div style='font-size:0.72rem; font-weight:700; color:var(--text); line-height:1.05;'>{nm_s}</div>"
+                        f"<div style='font-size:0.62rem; color:var(--muted); line-height:1.05;'>{tm_s}</div>"
+                        "</div>"
+                        "</div>"
+                    )
+                return (
+                    "<div style='display:flex; flex-wrap:wrap; gap:0.34rem;'>"
+                    + "".join(chips)
+                    + "</div>"
+                )
+
             render_section_header("Before vs After XI")
             p1, p2, p3 = st.columns([2, 1, 2])
-            p1.markdown(f"**Before XI**  \n{', '.join(sorted(before_names))[:220]}")
+            p1.markdown("**Before XI**")
+            p1.markdown(_xi_chip_grid_html(before_names), unsafe_allow_html=True)
             p2.markdown(
                 f"""
                 <div class='kpi-block'>
@@ -1854,7 +3325,8 @@ elif page == "Transfer Planner":
                 """,
                 unsafe_allow_html=True,
             )
-            p3.markdown(f"**After XI**  \n{', '.join(sorted(after_names))[:220]}")
+            p3.markdown("**After XI**")
+            p3.markdown(_xi_chip_grid_html(after_names), unsafe_allow_html=True)
         else:
             st.info("No beneficial 1-transfer found within budget.")
 
@@ -1863,9 +3335,11 @@ elif page == "Transfer Planner":
             for i, t in enumerate(ilp_2["transfers"], 1):
                 blank_note = " | BLANK" if t.get("is_blank") else ""
                 dgw_note   = " | DGW"   if t.get("double_gws",0) > 0 else ""
+                pchg_tag = _price_tag(float(t.get("price_change", 0) or 0))
                 out_team = transfer_team_name_map.get(t['out_name'], "")
                 in_team = transfer_team_name_map.get(t['in_name'], "")
-                if compact_layout:
+                col_a, col_b, col_c = st.columns([2, 1, 2])
+                with col_a:
                     st.markdown(f"""
                     <div class='transfer-card'>
                         <div class='kpi-label'>T{i} - OUT</div>
@@ -1879,9 +3353,18 @@ elif page == "Transfer Planner":
                         )}
                     </div>
                     """, unsafe_allow_html=True)
+                with col_b:
                     st.markdown(f"""
-                    <div class='transfer-card' style='border-color:#27e8a740;'>
-                        <div class='kpi-label'>T{i} - IN</div>
+                    <div style='text-align:center; padding-top:1rem;'>
+                        <div class='transfer-gain'>+{float(t.get('total_ev', t['gain'])):.2f}</div>
+                        <div style='font-size:0.65rem; color:var(--accent); font-family:Space Mono;'>
+                        EV</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col_c:
+                    st.markdown(f"""
+                    <div class='transfer-card' style='border-color:color-mix(in srgb, var(--primary) 28%, transparent);'>
+                        <div class='kpi-label'>T{i} - IN{pchg_tag}</div>
                         {player_identity_html(
                             t['in_name'],
                             in_team,
@@ -1892,56 +3375,19 @@ elif page == "Transfer Planner":
                         )}
                     </div>
                     """, unsafe_allow_html=True)
-                else:
-                    col_a, col_b, col_c = st.columns([2, 1, 2])
-                    with col_a:
-                        st.markdown(f"""
-                        <div class='transfer-card'>
-                            <div class='kpi-label'>T{i} - OUT</div>
-                            {player_identity_html(
-                                t['out_name'],
-                                out_team,
-                                transfer_face_map.get(t['out_name'], ''),
-                                transfer_badge_map.get(t['out_name'], ''),
-                                t['position'],
-                                'player-face-sm'
-                            )}
-                        </div>
-                        """, unsafe_allow_html=True)
-                    with col_b:
-                        st.markdown(f"""
-                        <div style='text-align:center; padding-top:1rem;'>
-                            <div class='transfer-gain'>+{t['gain']:.2f}</div>
-                            <div style='font-size:0.65rem; color:#37b6ff; font-family:Space Mono;'>
-                            5GW GAIN</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    with col_c:
-                        st.markdown(f"""
-                        <div class='transfer-card' style='border-color:#27e8a740;'>
-                            <div class='kpi-label'>T{i} - IN</div>
-                            {player_identity_html(
-                                t['in_name'],
-                                in_team,
-                                transfer_face_map.get(t['in_name'], ''),
-                                transfer_badge_map.get(t['in_name'], ''),
-                                f"{t['fixture_run']}{blank_note}{dgw_note}",
-                                'player-face-sm'
-                            )}
-                        </div>
-                        """, unsafe_allow_html=True)
 
-                t2_next, t2_horizon, t2_conf, t2_risk, t2_risks = _transfer_card_meta(
+                t2_next, t2_horizon, t2_ev, t2_conf, t2_risk, t2_risks = _transfer_card_meta(
                     t,
                     fallback_next=float(ilp_2.get("total_next_gain", 0.0)) / max(len(ilp_2.get("transfers", [])), 1),
                 )
                 render_recommendation_card(
-                    headline=f"T{i} detail: {t['out_name']} -> {t['in_name']}",
+                    headline=f"T{i} detail: {t['out_name']} → {t['in_name']}{pchg_tag}",
                     impact_now=t2_next,
                     impact_horizon=t2_horizon,
                     confidence=t2_conf,
                     risk_notes=t2_risks,
                     supporting_points=[
+                        f"Total EV: {t2_ev:+.2f}",
                         f"Cost delta: £{float(t.get('cost_diff', 0.0)):+.1f}M",
                         f"Fixture run: {t.get('fixture_run', '?')}",
                         f"Risk level: {t2_risk}",
@@ -1950,11 +3396,12 @@ elif page == "Transfer Planner":
 
             render_stat_cards(
                 [
+                    {"label": "Combined EV", "value": f"+{float(ilp_2.get('total_ev', ilp_2.get('total_gain', 0.0))):.2f}", "delta": "Both transfers EV", "tone": "positive"},
                     {"label": "Total 5GW Gain", "value": f"+{ilp_2['total_gain']:.2f}", "delta": "Combined horizon impact", "tone": "positive"},
                     {"label": "Total Next GW", "value": f"+{ilp_2['total_next_gain']:.2f}", "delta": "Immediate impact", "tone": "neutral"},
                     {"label": "Total Cost", "value": f"£{ilp_2['total_cost']:+.1f}M", "delta": "Budget delta", "tone": "warning" if ilp_2["total_cost"] > 0 else "positive"},
                 ],
-                compact=compact_layout,
+                compact=False,
             )
         else:
             st.info("No beneficial 2-transfer combination found within budget.")
@@ -1974,16 +3421,11 @@ elif page == "Transfer Planner":
                 h_risks = ["Hit cost can erase upside", "Minutes/rotation risk"]
                 if float(h.get("net_value", 0.0)) < 1:
                     h_risks.insert(0, "Low post-hit margin")
-                if compact_layout:
-                    r1c1, r1c2 = st.columns(2)
-                    r1c1.markdown(f"**OUT** {h['replace']}")
-                    r1c2.markdown(f"**IN** {h['player_in']} · {h['fixture_run']}")
-                else:
-                    c1, c2 = st.columns([3, 3])
-                    c1.markdown(f"**OUT** {h['replace']}")
-                    c2.markdown(f"**IN** {h['player_in']} · {h['fixture_run']}")
+                c1, c2 = st.columns([3, 3])
+                c1.markdown(f"**OUT** {h['replace']}")
+                c2.markdown(f"**IN** {h['player_in']} · {h['fixture_run']}{_price_tag(float(h.get('price_change', 0) or 0))}")
                 render_recommendation_card(
-                    headline=f"Hit detail: {h['replace']} -> {h['player_in']}",
+                    headline=f"Hit detail: {h['replace']} → {h['player_in']}{_price_tag(float(h.get('price_change', 0) or 0))}",
                     impact_now=h_next,
                     impact_horizon=h_horizon,
                     confidence=h_conf,
@@ -1999,11 +3441,49 @@ elif page == "Transfer Planner":
                         {"label": "Gain", "value": f"+{h['combined_gain']:.1f}", "delta": "Pre-hit projection", "tone": "positive"},
                         {"label": "Net", "value": f"+{h['net_value']:.1f}", "delta": "After -4 hit", "tone": "warning" if h["net_value"] < 1 else "positive"},
                     ],
-                    compact=compact_layout,
+                    compact=False,
                 )
+
+    with tab4:
+        if transfers_made == 0:
+            st.success("You still have a free transfer. Double-hit (-8) analysis is not applicable.")
+        elif not (feature_capabilities.get("double_hit") and get_double_hit_analysis):
+            st.info("Double-hit analysis is unavailable in the current backend.")
+        else:
+            try:
+                double_hits = get_double_hit_analysis(my_team, others, bank_balance, transfers_made)
+                if not double_hits:
+                    st.info("No double-transfer combo justifies a -8 hit this week.")
+                else:
+                    st.markdown("Combos worth considering despite a **-8** hit:")
+                    for i, dh in enumerate(double_hits, 1):
+                        conf_dh = float(np.clip(60 + 8 * float(dh.get("net_value", 0.0)), 30, 88))
+                        render_recommendation_card(
+                            headline=f"Option {i}: {dh.get('t1_out','?')} → {dh.get('t1_in','?')} + {dh.get('t2_out','?')} → {dh.get('t2_in','?')}",
+                            impact_now=float(dh.get("total_xpts_gain", 0.0)),
+                            impact_horizon=float(dh.get("total_xpts_gain", 0.0)),
+                            confidence=conf_dh,
+                            risk_notes=["-8 hit cost", "Requires both transfers to pay off"],
+                            supporting_points=[
+                                f"Combined xPts gain: {float(dh.get('total_xpts_gain', 0.0)):+.2f}",
+                                f"Net after hit: {float(dh.get('net_value', 0.0)):+.2f}",
+                                f"Total cost: £{float(dh.get('total_cost', 0.0)):+.1f}M",
+                            ],
+                        )
+            except Exception as e:
+                st.caption(f"Double hit analysis unavailable: {e}")
 
 
 elif page == "Player Explorer":
+    render_page_hero(
+        "Player Explorer",
+        "Search the full player pool by value, ceiling, and safety with side-by-side comparisons.",
+        [
+            f"Pool {len(enriched_df)}",
+            f"Owned {len(data['my_player_ids'])}",
+            "Scatter + Differentials + Compare",
+        ],
+    )
 
     render_section_header("Player Explorer")
 
@@ -2026,6 +3506,7 @@ elif page == "Player Explorer":
     if "px_search_widget" not in st.session_state:
         st.session_state["px_search_widget"] = st.session_state["px_search"]
 
+    render_section_header("Explorer Controls")
     r_mode, r_reset = st.columns([1, 1])
     with r_mode:
         mode = st.radio("Objective mode", ["Value", "Ceiling", "Safety"], horizontal=True, key="px_mode")
@@ -2041,31 +3522,17 @@ elif page == "Player Explorer":
             st.session_state["px_search_widget"] = st.session_state["px_search"]
             st.rerun()
 
-    if compact_layout:
-        f1, f2 = st.columns(2)
-        with f1:
-            pos_filter = st.multiselect("Position",
-                ["Goalkeeper","Defender","Midfielder","Forward"],
-                key="px_pos_filter_widget")
-        with f2:
-            search = st.text_input("Search player name", st.session_state["px_search_widget"], key="px_search_widget")
-        f3, f4 = st.columns(2)
-        with f3:
-            price_range = st.slider("Price Range (£M)", 3.5, 15.0, st.session_state["px_price_range_widget"], 0.5, key="px_price_range_widget")
-        with f4:
-            min_pred = st.slider("Min Predicted Pts", 0.0, 15.0, st.session_state["px_min_pred_widget"], 0.5, key="px_min_pred_widget")
-    else:
-        f1, f2, f3, f4 = st.columns(4)
-        with f1:
-            pos_filter = st.multiselect("Position",
-                ["Goalkeeper","Defender","Midfielder","Forward"],
-                key="px_pos_filter_widget")
-        with f2:
-            price_range = st.slider("Price Range (£M)", 3.5, 15.0, st.session_state["px_price_range_widget"], 0.5, key="px_price_range_widget")
-        with f3:
-            min_pred = st.slider("Min Predicted Pts", 0.0, 15.0, st.session_state["px_min_pred_widget"], 0.5, key="px_min_pred_widget")
-        with f4:
-            search = st.text_input("Search player name", st.session_state["px_search_widget"], key="px_search_widget")
+    f1, f2, f3, f4 = st.columns(4)
+    with f1:
+        pos_filter = st.multiselect("Position",
+            ["Goalkeeper","Defender","Midfielder","Forward"],
+            key="px_pos_filter_widget")
+    with f2:
+        price_range = st.slider("Price Range (£M)", 3.5, 15.0, st.session_state["px_price_range_widget"], 0.5, key="px_price_range_widget")
+    with f3:
+        min_pred = st.slider("Min Predicted Pts", 0.0, 15.0, st.session_state["px_min_pred_widget"], 0.5, key="px_min_pred_widget")
+    with f4:
+        search = st.text_input("Search player name", st.session_state["px_search_widget"], key="px_search_widget")
 
     # Persist latest filter values across mode/layout switches.
     st.session_state["px_pos_filter"] = pos_filter
@@ -2089,6 +3556,15 @@ elif page == "Player Explorer":
         pool = pool[pool["player_name"].str.contains(search, case=False, na=False)]
 
     st.caption(f"{len(pool)} players shown")
+    if not pool.empty:
+        points_col_pool = pick_points_col(pool)
+        pool_stats = [
+            {"label": "Shown", "value": str(len(pool)), "delta": "Filtered players", "tone": "neutral"},
+            {"label": "Avg xPts" if points_col_pool == "expected_pts" else "Avg Pred", "value": f"{float(pd.to_numeric(pool[points_col_pool], errors='coerce').fillna(0).mean()):.2f}", "delta": "Current filtered pool", "tone": "positive"},
+            {"label": "Median Price", "value": f"£{float(pool['price'].median()):.1f}", "delta": "Current filtered pool", "tone": "neutral"},
+            {"label": "Top xPts" if points_col_pool == "expected_pts" else "Top Pred", "value": f"{float(pd.to_numeric(pool[points_col_pool], errors='coerce').fillna(0).max()):.2f}", "delta": "Highest in filter", "tone": "positive"},
+        ]
+        render_stat_cards(pool_stats)
 
     tab_scatter, tab_bar, tab_compare, tab_table = st.tabs([
         "Pts vs Price", "Top Differentials", "Player Comparison", "Full Table"
@@ -2099,25 +3575,28 @@ elif page == "Player Explorer":
         if plot_df.empty:
             st.info("No players match the current filters.")
         else:
+            plot_df["xpts_val"] = plot_df.apply(lambda r: _xpts(r), axis=1)
             plot_df["value_index"] = (
-                plot_df["predicted_pts"] / plot_df["price"].replace(0, np.nan)
+                plot_df["xpts_val"] / plot_df["price"].replace(0, np.nan)
             ).fillna(0.0)
-            if "chance_of_playing" in plot_df.columns:
+            if "p_plays_full" in plot_df.columns:
+                safety = plot_df["p_plays_full"].fillna(1.0).astype(float)
+            elif "chance_of_playing" in plot_df.columns:
                 safety = plot_df["chance_of_playing"].fillna(100).astype(float) / 100.0
             else:
                 safety = pd.Series([1.0] * len(plot_df), index=plot_df.index, dtype=float)
             plot_df["objective_score"] = (
                 plot_df["value_index"] if mode == "Value"
-                else plot_df["predicted_pts"] if mode == "Ceiling"
-                else plot_df["predicted_pts"] * safety
+                else plot_df["xpts_val"] if mode == "Ceiling"
+                else plot_df["xpts_val"] * safety
             )
             x_med = float(plot_df["price"].median())
-            y_med = float(plot_df["predicted_pts"].median())
+            y_med = float(plot_df["xpts_val"].median())
             top_value = plot_df.nlargest(8, "objective_score")
 
             fig = px.scatter(
                 plot_df,
-                x="price", y="predicted_pts",
+                x="price", y="xpts_val",
                 color="position",
                 size="value_index",
                 size_max=26,
@@ -2126,42 +3605,38 @@ elif page == "Player Explorer":
                 hover_data={
                     "team_name": True,
                     "price": ":.1f",
+                    "xpts_val": ":.2f",
                     "predicted_pts": ":.2f",
                     "combined_score": ":.2f",
                     "fixture_run_label": True,
                     "ownership": ":.1f",
                     "value_index": ":.3f",
                 },
-                labels={"price": "Price (£M)", "predicted_pts": "Predicted Points"},
-                color_discrete_map={
-                    "Goalkeeper": "#27e8a7",
-                    "Defender": "#37b6ff",
-                    "Midfielder": "#ffb547",
-                    "Forward": "#ff5d73",
-                },
+                labels={"price": "Price (£M)", "xpts_val": "xPts"},
+                color_discrete_map=POSITION_COLOR_MAP,
             )
 
             fig.add_hline(
-                y=y_med, line_dash="dot", line_color="#37b6ff",
+                y=y_med, line_dash="dot", line_color=PLOTLY_ACCENT,
                 annotation_text="Median xPts", annotation_position="top left",
             )
             fig.add_vline(
-                x=x_med, line_dash="dot", line_color="#37b6ff",
+                x=x_med, line_dash="dot", line_color=PLOTLY_ACCENT,
                 annotation_text="Median Price", annotation_position="top right",
             )
 
             fig.add_trace(go.Scatter(
                 x=top_value["price"],
-                y=top_value["predicted_pts"],
+                y=top_value["xpts_val"],
                 mode="markers+text",
                 text=top_value["player_name"].str.split().str[-1],
                 textposition="top center",
-                textfont=dict(size=10, color="#eaf2ff"),
+                textfont=dict(size=10, color=PLOTLY_TEXT),
                 marker=dict(
                     size=12,
                     symbol="diamond",
-                    color="rgba(39,232,167,0.15)",
-                    line=dict(color="#27e8a7", width=1.8),
+                    color=_hex_to_rgba(PLOTLY_PRIMARY, 0.15),
+                    line=dict(color=PLOTLY_PRIMARY, width=1.8),
                 ),
                 name="Top Value",
                 hoverinfo="skip",
@@ -2171,10 +3646,10 @@ elif page == "Player Explorer":
             if not squad_pool.empty:
                 fig.add_trace(go.Scatter(
                     x=squad_pool["price"],
-                    y=squad_pool["predicted_pts"],
+                    y=squad_pool["xpts_val"],
                     mode="markers",
-                    marker=dict(size=16, color="white", symbol="star",
-                                line=dict(color="#27e8a7", width=2)),
+                    marker=dict(size=16, color=PLOTLY_SURFACE, symbol="star",
+                                line=dict(color=PLOTLY_PRIMARY, width=2)),
                     name="Your Squad",
                     hovertext=squad_pool["player_name"],
                 ))
@@ -2189,22 +3664,22 @@ elif page == "Player Explorer":
                 fig, use_container_width=True,
                 config={"displayModeBar": False, "responsive": True},
             )
-            st.caption(f"Objective mode: {mode}. Diamonds mark top picks for the selected objective.")
+            st.caption(f"Objective mode: {mode}. Y-axis uses {'expected_pts' if 'expected_pts' in plot_df.columns else 'predicted_pts'}. Diamonds mark top picks for the selected objective.")
 
             render_section_header(f"Top Picks by {mode}")
             top_strip = top_value.sort_values("objective_score", ascending=False).head(6).copy()
-            strip_cols = st.columns(2 if compact_layout else 3)
+            strip_cols = st.columns(3)
             for i, (_, row) in enumerate(top_strip.iterrows(), 1):
                 with strip_cols[(i - 1) % len(strip_cols)]:
                     objective_label = (
                         f"{float(row.get('value_index', 0.0)):.3f} value/£"
                         if mode == "Value"
-                        else f"{float(row.get('predicted_pts', 0.0)):.2f} xPts"
+                        else f"{float(row.get('xpts_val', _xpts(row))):.2f} xPts"
                         if mode == "Ceiling"
-                        else f"{float(row.get('reliability', row.get('chance_of_playing', 100) / 100)):.0%} reliability"
+                        else f"{float(row.get('p_plays_full', row.get('reliability', row.get('chance_of_playing', 100) / 100))):.0%} reliability"
                     )
                     rank_tag = f"#{i}"
-                    subtitle = f"{row['position']} | £{float(row['price']):.1f}M | {float(row['predicted_pts']):.2f} pts"
+                    subtitle = f"{row['position']} | £{float(row['price']):.1f}M | {float(row.get('xpts_val', _xpts(row))):.2f} xPts{_price_tag(float(row.get('predicted_price_change', 0) or 0))}"
                     st.markdown(
                         f"""
                         <div class='fpl-card'>
@@ -2220,7 +3695,7 @@ elif page == "Player Explorer":
                                 subtitle,
                                 'player-face-sm'
                             )}
-                            <div style='font-size:0.72rem; color:#9cb0d0; margin-top:0.35rem;'>
+                            <div style='font-size:0.72rem; color:var(--muted); margin-top:0.35rem;'>
                                 Run: {_safe_text(row.get('fixture_run_label', '?'))}
                             </div>
                         </div>
@@ -2228,16 +3703,20 @@ elif page == "Player Explorer":
                         unsafe_allow_html=True,
                     )
 
+            shortlist_cols = [
+                "player_face", "team_badge", "player_name", "team_name", "position",
+                "price", "xpts_val", "predicted_pts", "value_index", "objective_score", "fixture_run_label"
+            ]
+            if "predicted_price_change" in top_value.columns:
+                shortlist_cols.append("predicted_price_change")
             shortlist = (
-                top_value[[
-                    "player_face", "team_badge", "player_name", "team_name", "position",
-                    "price", "predicted_pts", "value_index", "objective_score", "fixture_run_label"
-                ]]
+                top_value[shortlist_cols]
                 .rename(columns={
                     "player_face": "Face", "team_badge": "Badge", "player_name": "Player",
                     "team_name": "Team", "position": "Pos", "price": "£",
-                    "predicted_pts": "xPts", "value_index": "Value/£",
+                    "xpts_val": "xPts", "predicted_pts": "Pred", "value_index": "Value/£",
                     "objective_score": "Objective", "fixture_run_label": "Run",
+                    "predicted_price_change": "Price Δ",
                 })
                 .sort_values("Objective", ascending=False)
             )
@@ -2249,8 +3728,10 @@ elif page == "Player Explorer":
                         "Badge": st.column_config.ImageColumn("Badge", width="small"),
                         "£": st.column_config.NumberColumn(format="£%.1f"),
                         "xPts": st.column_config.NumberColumn(format="%.2f"),
+                        "Pred": st.column_config.NumberColumn(format="%.2f"),
                         "Value/£": st.column_config.NumberColumn(format="%.3f"),
                         "Objective": st.column_config.NumberColumn(format="%.3f"),
+                        "Price Δ": st.column_config.NumberColumn(format="%+.2f"),
                     },
                 )
 
@@ -2265,10 +3746,7 @@ elif page == "Player Explorer":
                 color="position",
                 hover_data=["team_name", "price", "predicted_pts",
                             "ownership_pct", "fixture_run_label"],
-                color_discrete_map={
-                    "Goalkeeper": "#27e8a7", "Defender": "#37b6ff",
-                    "Midfielder": "#f6c90e", "Forward": "#ff5d73"
-                },
+                color_discrete_map=POSITION_COLOR_MAP,
                 labels={"differential_score": "Differential Score",
                         "player_name": ""},
             )
@@ -2298,25 +3776,27 @@ elif page == "Player Explorer":
 
             id_col1, id_col2 = st.columns(2)
             with id_col1:
-                p1_subtitle = f"£{p1['price']:.1f}M | {p1['predicted_pts']:.2f} pts"
+                p1_subtitle = f"£{p1['price']:.1f}M | {_xpts(p1):.2f} xPts"
                 st.markdown(
                     f"<div class='fpl-card'>{player_identity_html(p1['player_name'], p1['team_name'], p1.get('player_face',''), p1.get('team_badge',''), p1_subtitle)}</div>",
                     unsafe_allow_html=True,
                 )
             with id_col2:
-                p2_subtitle = f"£{p2['price']:.1f}M | {p2['predicted_pts']:.2f} pts"
+                p2_subtitle = f"£{p2['price']:.1f}M | {_xpts(p2):.2f} xPts"
                 st.markdown(
                     f"<div class='fpl-card'>{player_identity_html(p2['player_name'], p2['team_name'], p2.get('player_face',''), p2.get('team_badge',''), p2_subtitle)}</div>",
                     unsafe_allow_html=True,
                 )
 
             metrics = [
+                ("xPts",           _xpts(p1),                 _xpts(p2)),
                 ("Predicted Pts",  p1["predicted_pts"],       p2["predicted_pts"]),
                 ("Combined Score", p1["combined_score"],      p2["combined_score"]),
                 ("Price £M",       p1["price"],               p2["price"]),
                 ("Avg Difficulty", p1.get("avg_difficulty",3),p2.get("avg_difficulty",3)),
                 ("Momentum",       p1.get("momentum_score",3),p2.get("momentum_score",3)),
                 ("Value Score",    p1.get("value_score",0),   p2.get("value_score",0)),
+                ("p_plays_full",   p1.get("p_plays_full",1),  p2.get("p_plays_full",1)),
                 ("Blank GWs",      p1.get("blank_gws",0),     p2.get("blank_gws",0)),
                 ("Double GWs",     p1.get("double_gws",0),    p2.get("double_gws",0)),
             ]
@@ -2328,11 +3808,11 @@ elif page == "Player Explorer":
             fig = go.Figure()
             fig.add_trace(go.Bar(
                 name=p1_name.split()[-1], x=labels, y=vals_p1,
-                marker_color="#27e8a7",
+                marker_color=PLOTLY_PRIMARY,
             ))
             fig.add_trace(go.Bar(
                 name=p2_name.split()[-1], x=labels, y=vals_p2,
-                marker_color="#37b6ff",
+                marker_color=PLOTLY_ACCENT,
             ))
             fig.update_layout(**PLOTLY_THEME, barmode="group", height=380,
                               margin=dict(l=10, r=10, t=30, b=60))
@@ -2395,16 +3875,20 @@ elif page == "Player Explorer":
             )
 
     with tab_table:
-        disp_cols = ["player_face","team_badge","player_name","team_name","position","price",
-                     "predicted_pts","combined_score","value_score",
+        disp_cols = ["player_face","team_badge","player_name","team_name","position","price"]
+        if "expected_pts" in pool.columns:
+            disp_cols.append("expected_pts")
+        disp_cols += ["predicted_pts","combined_score","value_score",
                      "fixture_run_label","blank_gws","double_gws"]
+        if "predicted_price_change" in pool.columns:
+            disp_cols.append("predicted_price_change")
         disp_pool = pool[disp_cols].rename(columns={
             "player_face":"Face","team_badge":"Badge",
             "player_name":"Player","team_name":"Team","position":"Pos",
-            "price":"£","predicted_pts":"Pred","combined_score":"5GW",
+            "price":"£","expected_pts":"xPts","predicted_pts":"Pred","combined_score":"5GW",
             "value_score":"Val","fixture_run_label":"Run",
-            "blank_gws":"Blanks","double_gws":"DGWs",
-        }).sort_values("Pred", ascending=False)
+            "blank_gws":"Blanks","double_gws":"DGWs","predicted_price_change":"Price Δ",
+        }).sort_values("xPts" if "expected_pts" in pool.columns else "Pred", ascending=False)
         st.dataframe(
             disp_pool, use_container_width=True, hide_index=True,
             column_config={
@@ -2415,67 +3899,75 @@ elif page == "Player Explorer":
 
 
 elif page == "Captain Picker":
+    render_page_hero(
+        "Captain Picker",
+        "Evaluate captain and vice-captain options using xPts, availability, and DGW/blank context.",
+        [
+            f"GW{current_gw+1}",
+            "Captain + VC",
+            "Chip-aware scoring",
+            f"TC {'Available' if triple_captain else 'Used'}",
+        ],
+    )
 
     render_section_header("Captain & Vice Captain Recommendation")
 
     # Chip status
     chips = ["Wildcard","Free Hit","Triple Captain","Bench Boost"]
-    if compact_layout:
-        for row in [chips[:2], chips[2:]]:
-            row_cols = st.columns(2)
-            for i, chip in enumerate(row):
-                available = chip in available_chips
-                row_cols[i].markdown(f"""
-                <div class='kpi-block'>
-                    <div class='kpi-label'>{chip}</div>
-                    <div style='font-size:1.2rem; font-weight:800;
-                                color:{"#27e8a7" if available else "#ff5d73"};'>
-                        {'Available' if available else 'Used'}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-    else:
-        chip_cols = st.columns(4)
-        for i, chip in enumerate(chips):
-            available = chip in available_chips
-            chip_cols[i].markdown(f"""
-            <div class='kpi-block'>
-                <div class='kpi-label'>{chip}</div>
-                <div style='font-size:1.2rem; font-weight:800;
-                            color:{"#27e8a7" if available else "#ff5d73"};'>
-                    {'Available' if available else 'Used'}
-                </div>
+    chip_cols = st.columns(4)
+    for i, chip in enumerate(chips):
+        available = chip in available_chips
+        chip_cols[i].markdown(f"""
+        <div class='kpi-block'>
+            <div class='kpi-label'>{chip}</div>
+            <div style='font-size:1.2rem; font-weight:800;
+                        color:{"var(--primary)" if available else "var(--danger)"};'>
+                {'Available' if available else 'Used'}
             </div>
-            """, unsafe_allow_html=True)
+        </div>
+        """, unsafe_allow_html=True)
 
     st.divider()
 
     # Compute captain scores
     cap_df = my_team.copy()
-    cap_df["reliability"] = (
-        cap_df["player_id"].astype("Int64").map(chance_map).fillna(100).astype(float) / 100.0
-    )
+    if "p_plays_full" in cap_df.columns:
+        cap_df["reliability"] = cap_df["p_plays_full"].fillna(1.0).astype(float)
+    else:
+        cap_df["reliability"] = (
+            cap_df["player_id"].astype("Int64").map(chance_map).fillna(100).astype(float) / 100.0
+        )
+    cap_df["xpts_val"] = cap_df.apply(lambda r: _xpts(r), axis=1)
     cap_df["upside"] = (
-        cap_df["predicted_pts"].astype(float)
+        cap_df["xpts_val"].astype(float)
         + 0.5 * cap_df.get("double_gws", 0).fillna(0).astype(float)
         - 0.35 * cap_df.get("blank_gws", 0).fillna(0).astype(float)
     )
-    cap_df["xpts_score"] = cap_df.apply(
-        lambda r: xpts_captain_score(r, triple_captain), axis=1
+    has_cap_ev = "captain_ev" in cap_df.columns
+    cap_df["xpts_score"] = cap_df.apply(lambda r: xpts_captain_score(r, triple_captain), axis=1)
+    cap_df["_cap_sort"] = (
+        cap_df["captain_ev"].astype(float) * (1.5 if triple_captain else 1.0)
+        if has_cap_ev else cap_df["xpts_score"]
     )
     blank_mask = (
         cap_df["is_blank_next_gw"].fillna(False).astype(bool)
         if "is_blank_next_gw" in cap_df.columns
         else pd.Series(False, index=cap_df.index)
     )
-    cap_df["vc_score"] = (cap_df["predicted_pts"].astype(float) * cap_df["reliability"]).where(~blank_mask, 0.0)
-    cap_df["captain_expected_return"] = cap_df["predicted_pts"].astype(float) * 2.0
-    cap_df["captain_confidence"] = np.clip(45 + 30 * cap_df["reliability"] + 3 * cap_df["predicted_pts"], 40, 95)
+    cap_df["vc_score"] = (cap_df["xpts_val"].astype(float) * cap_df["reliability"]).where(~blank_mask, 0.0)
+    cap_df["captain_expected_return"] = cap_df["xpts_val"].astype(float) * (3.0 if triple_captain else 2.0)
+    cap_df["captain_confidence"] = np.clip(45 + 25 * cap_df["reliability"] + 4 * cap_df["xpts_val"], 40, 95)
+    if {"pts_low", "pts_high"}.issubset(cap_df.columns):
+        spread = (
+            pd.to_numeric(cap_df["pts_high"], errors="coerce")
+            - pd.to_numeric(cap_df["pts_low"], errors="coerce")
+        ).fillna(0.0).clip(lower=0.0)
+        cap_df["captain_confidence"] = np.clip(cap_df["captain_confidence"] - np.minimum(8.0, spread * 1.2), 35, 95)
 
     # Exclude blanks
     non_blank = cap_df[~blank_mask]
 
-    top3_cap = non_blank.nlargest(3, "xpts_score")
+    top3_cap = non_blank.nlargest(3, "_cap_sort")
     top_vc   = non_blank[~non_blank["player_id"].isin(
         top3_cap.iloc[:1]["player_id"]
     )].nlargest(1, "vc_score")
@@ -2495,17 +3987,24 @@ elif page == "Captain Picker":
             primary_action=f"Captain {cap_row['player_name']} | VC {vc_name}",
             confidence=cap_conf,
             reasons=[
-                f"Expected captain return: {float(cap_row.get('captain_expected_return', 0.0)):.1f}",
+                f"{'Cap EV' if has_cap_ev else 'Expected captain return'}: {float(cap_row.get('captain_ev', cap_row.get('captain_expected_return', 0.0))):.1f}",
                 f"Reliability: {float(cap_row.get('reliability', 1.0)):.0%} | Upside: {float(cap_row.get('upside', 0.0)):.1f}",
                 dgw_note,
             ],
             risk_level=cap_risk,
         )
+        render_stat_cards(
+            [
+                {"label": "Captain", "value": str(cap_row["player_name"]), "delta": f"Conf {cap_conf:.0f}% · {float(cap_row.get('reliability',1.0)):.0%} reliability", "tone": "positive"},
+                {"label": "VC", "value": str(vc_name), "delta": "p_plays_full-weighted backup" if "p_plays_full" in cap_df.columns else "Reliability-weighted backup", "tone": "neutral"},
+                {"label": "Cap EV" if has_cap_ev else "Top Return", "value": f"{float(cap_row.get('captain_ev', cap_row.get('captain_expected_return', 0.0))):.1f}", "delta": "Expected captained return", "tone": "positive"},
+            ]
+        )
 
     # Captain podium
     st.markdown("**Captain Recommendations**")
     medals = ["Captain", "Vice Captain Option", "3rd Option"]
-    cap_cols = st.columns(1 if compact_layout else 3)
+    cap_cols = st.columns(3)
     for i, (_, row) in enumerate(top3_cap.iterrows()):
         with cap_cols[i % len(cap_cols)]:
             mult = 3 if (triple_captain and i == 0) else 2
@@ -2516,7 +4015,7 @@ elif page == "Captain Picker":
             cap_face = _safe_text(row.get("player_face", ""))
             cap_badge = _safe_text(row.get("team_badge", ""))
             st.markdown(f"""
-            <div class='fpl-card' style='border-color:{"#f6c90e" if i==0 else "#1f3459"};
+            <div class='fpl-card' style='border-color:{"var(--warning)" if i==0 else "var(--line)"};
                                          text-align:center;'>
                 <div style='font-size:1.5rem; margin-bottom:0.5rem;'>
                     {medals[i]}
@@ -2532,15 +4031,15 @@ elif page == "Captain Picker":
                         {cap_name}
                     </div>
                 </div>
-                <div style='color:#9cb0d0; font-size:0.8rem; margin-top:0.3rem;'>
-                    {cap_team} | {cap_run}
+                <div style='color:var(--muted); font-size:0.8rem; margin-top:0.3rem;'>
+                    {cap_team} | {cap_run}{_price_tag(float(row.get("predicted_price_change", 0) or 0))}
                 </div>
                 <div style='font-family:Space Mono; font-size:1.4rem;
-                            color:#27e8a7; margin-top:0.6rem;'>
-                    {row["predicted_pts"]} pts
+                            color:var(--primary); margin-top:0.6rem;'>
+                    {_xpts(row):.2f} xPts
                 </div>
-                <div style='font-size:0.75rem; color:#37b6ff; margin-top:0.2rem;'>
-                    = {round(row["predicted_pts"]*mult,2)} if captained
+                <div style='font-size:0.75rem; color:var(--accent); margin-top:0.2rem;'>
+                    {'Cap EV: ' + format(float(row.get("captain_ev", 0.0)), '.1f') if has_cap_ev else '= ' + str(round(_xpts(row)*mult,2)) + ' if captained'}
                     {"  DGW" if dgw else ""}
                     {"  TC 3x" if triple_captain and i==0 else ""}
                 </div>
@@ -2549,7 +4048,7 @@ elif page == "Captain Picker":
                     <span class='xi-role'>Upside {float(row.get("upside",0.0)):.1f}</span>
                     <span class='xi-role'>Conf {float(row.get("captain_confidence",60)):.0f}%</span>
                 </div>
-                <div style='font-size:0.7rem; color:#90a2be; margin-top:0.3rem;'>
+                <div style='font-size:0.7rem; color:var(--muted); margin-top:0.3rem;'>
                     xPts score: {row["xpts_score"]:.3f}
                 </div>
             </div>
@@ -2565,37 +4064,79 @@ elif page == "Captain Picker":
             <div style='font-weight:800; font-size:1.1rem; margin-top:0.3rem;'>
                 {vc_row["player_name"]}
             </div>
-            <div style='font-size:0.85rem; color:#b7c7df; margin-top:0.3rem;'>
-                {vc_row["predicted_pts"]} predicted pts |
-                {chance}% chance of playing |
+            <div style='font-size:0.85rem; color:var(--muted); margin-top:0.3rem;'>
+                {_xpts(vc_row):.2f} xPts |
+                {chance}% reliability |
                 {vc_row.get("fixture_run_label","?")}
                 - Chosen as most reliable backup in case captain doesn't play.
             </div>
-            <div style='margin-top:0.45rem; color:#c9d8f0; font-size:0.8rem;'>
+            <div style='margin-top:0.45rem; color:var(--muted); font-size:0.8rem;'>
                 Fallback logic: If captain fails to start, VC expected return = {float(vc_row.get("captain_expected_return",0.0)):.1f}.
             </div>
         </div>
         """, unsafe_allow_html=True)
 
+    if feature_capabilities.get("captain_mc") and run_monte_carlo_captain:
+        with st.expander("Monte Carlo Captain Analysis (1,000 simulations)", expanded=False):
+            try:
+                mc_results = run_monte_carlo_captain(my_team)
+                if mc_results:
+                    rows = []
+                    for r in mc_results[:5]:
+                        rows.append({
+                            "Player": r.get("player_name", "?"),
+                            "Win %": f"{float(r.get('win_prob', 0))*100:.1f}%",
+                            "Cap EV": round(float(r.get("captain_ev", 0.0)), 2),
+                            "Gain vs Others": round(float(r.get("expected_captain_gain", 0.0)), 2),
+                            "Run": r.get("fixture_run", "?"),
+                            "DGW": "Yes" if float(r.get("double_gws", 0) or 0) > 0 else "No",
+                        })
+                    render_insight_table(pd.DataFrame(rows), row_density="compact")
+            except Exception as e:
+                st.caption(f"Monte Carlo analysis unavailable: {e}")
+
+    if feature_capabilities.get("captain_diff") and get_captaincy_differential_analysis:
+        with st.expander("Captaincy Differential (vs Average Manager)", expanded=False):
+            try:
+                cap_diff_results = get_captaincy_differential_analysis(my_team, bootstrap)
+                if cap_diff_results:
+                    field_ev = float(cap_diff_results[0].get("field_captain_ev", 0.0))
+                    st.caption(f"Average manager captain EV (ownership-weighted): {field_ev:.1f}")
+                    diff_df = pd.DataFrame([
+                        {
+                            "Player": r.get("player_name", "?"),
+                            "Ownership %": round(float(r.get("ownership_pct", 0.0)), 1),
+                            "Cap EV": round(float(r.get("captain_ev", 0.0)), 2),
+                            "vs Field": round(float(r.get("differential_gain", 0.0)), 2),
+                            "Verdict": "Differential" if bool(r.get("is_differential", False)) else "Template",
+                            "Run": r.get("fixture_run", "?"),
+                        }
+                        for r in cap_diff_results
+                    ])
+                    render_insight_table(diff_df, row_density="compact")
+            except Exception as e:
+                st.caption(f"Captaincy differential unavailable: {e}")
+
     st.divider()
 
     render_section_header("Full Squad xPts Ranking")
 
-    cap_sorted = cap_df.sort_values("xpts_score", ascending=True)
+    cap_sort_col = "captain_ev" if has_cap_ev else "xpts_score"
+    cap_sorted = cap_df.sort_values(cap_sort_col, ascending=True)
     fig = go.Figure()
     fig.add_trace(go.Bar(
-        x=cap_sorted["xpts_score"],
+        x=cap_sorted[cap_sort_col],
         y=cap_sorted["player_name"],
         orientation="h",
         marker=dict(
-            color=cap_sorted["xpts_score"],
-            colorscale=[[0, "#1f3459"], [0.5, "#37b6ff"], [1, "#27e8a7"]],
+            color=cap_sorted[cap_sort_col],
+            colorscale=PLOTLY_XPTS_SCALE,
         ),
-        hovertemplate="<b>%{y}</b><br>xPts Score: %{x:.3f}<extra></extra>",
+        hovertemplate="<b>%{y}</b><br>%{x:.3f}<extra></extra>",
     ))
     fig.update_layout(
         **PLOTLY_THEME, height=450,
-        xaxis_title="xPts Captain Score",
+        xaxis_title="Captain EV" if has_cap_ev else "xPts Captain Score",
         margin=dict(l=10, r=10, t=20, b=30),
     )
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
@@ -2606,16 +4147,11 @@ elif page == "Captain Picker":
         cap_matrix,
         x="reliability",
         y="upside",
-        size="predicted_pts",
+        size="xpts_val",
         color="position",
         hover_name="player_name",
-        labels={"reliability": "Reliability", "upside": "Upside Score"},
-        color_discrete_map={
-            "Goalkeeper": "#27e8a7",
-            "Defender": "#37b6ff",
-            "Midfielder": "#ffb547",
-            "Forward": "#ff5d73",
-        },
+        labels={"reliability": "Reliability (p_plays_full)" if "p_plays_full" in cap_df.columns else "Reliability", "upside": "Upside Score"},
+        color_discrete_map=POSITION_COLOR_MAP,
     )
     fig2.update_layout(**PLOTLY_THEME, height=380, margin=dict(l=10, r=10, t=20, b=30))
     fig2.update_xaxes(tickformat=".0%")
@@ -2637,10 +4173,21 @@ elif page == "Captain Picker":
 
 
 elif page == "Season Tracker":
+    render_page_hero(
+        "Season Tracker",
+        "Track squad value growth, transfer hit rate, model calibration, and season-long decision quality.",
+        [
+            f"Current GW {current_gw}",
+            "Value trend",
+            "Transfer accuracy",
+            "Model diagnostics",
+        ],
+    )
 
     render_section_header("Season Performance Tracker")
 
     value_data = track_squad_value(my_team, bootstrap, current_gw)
+    history = value_data.get("history", {})
     try:
         baseline_gw_num = int(value_data.get("baseline_gw", current_gw))
     except (TypeError, ValueError):
@@ -2659,16 +4206,20 @@ elif page == "Season Tracker":
         total_change_num = current_value_num - baseline_value_num
 
     change_sign = "+" if total_change_num >= 0 else ""
-    if compact_layout:
-        r1c1, r1c2 = st.columns(2)
-        r1c1.metric("Current Squad Value", f"£{current_value_num:.1f}M")
-        r1c2.metric("Baseline Value", f"£{baseline_value_num:.1f}M", f"GW{baseline_gw_num}")
-        st.metric("Total Change", f"{change_sign}{total_change_num:.1f}M")
-    else:
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Current Squad Value", f"£{current_value_num:.1f}M")
-        col2.metric("Baseline Value", f"£{baseline_value_num:.1f}M", f"GW{baseline_gw_num}")
-        col3.metric("Total Change", f"{change_sign}{total_change_num:.1f}M")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Current Squad Value", f"£{current_value_num:.1f}M")
+    col2.metric("Baseline Value", f"£{baseline_value_num:.1f}M", f"GW{baseline_gw_num}")
+    col3.metric("Total Change", f"{change_sign}{total_change_num:.1f}M")
+    render_stat_cards(
+        [
+            {"label": "Baseline GW", "value": f"GW{baseline_gw_num}", "delta": "Tracking start", "tone": "neutral"},
+            {"label": "Value Delta", "value": f"{change_sign}{total_change_num:.1f}M", "delta": "Since baseline", "tone": "positive" if total_change_num >= 0 else "danger"},
+            {"label": "History Points", "value": str(len(history)), "delta": "Logged value snapshots", "tone": "neutral"},
+            {"label": "Sell Value", "value": f"£{squad_sell_value:.1f}M", "delta": "Sell-price estimate", "tone": "neutral"},
+        ]
+    )
+    if not value_breakdown.empty:
+        st.caption("Sell Value uses sell-price breakdown (not just current displayed prices).")
 
     # Manager scorecard + period comparison
     gw_cols = sorted(
@@ -2707,16 +4258,44 @@ elif page == "Season Tracker":
         pass
 
     value_eff = float((current_value_num - baseline_value_num) / max(1.0, float(current_gw) - float(baseline_gw_num) + 1.0))
+    hit_component = float(transfer_hit_rate) if not np.isnan(transfer_hit_rate) else 50.0
+    calibration_component = float(pred_calibration) if not np.isnan(pred_calibration) else 50.0
+    value_component = float(np.clip(50.0 + 40.0 * value_eff, 0.0, 100.0))
+    manager_score = float(
+        np.clip(
+            0.40 * hit_component + 0.35 * calibration_component + 0.25 * value_component,
+            0.0,
+            100.0,
+        )
+    )
+    manager_tone = "positive" if manager_score >= 70 else "warning" if manager_score >= 50 else "danger"
+    manager_delta = (
+        f"Hit {hit_component:.0f} | Cal {calibration_component:.0f} | Value {value_component:.0f}"
+    )
     render_stat_cards(
         [
-            {"label": "Manager Scorecard", "value": "Decision Quality", "delta": "Transfer + calibration + value growth", "tone": "neutral"},
+            {"label": "Manager Scorecard", "value": f"{manager_score:.0f}/100", "delta": manager_delta, "tone": manager_tone},
             {"label": "Transfer Hit Rate", "value": f"{transfer_hit_rate:.1f}%" if not np.isnan(transfer_hit_rate) else "N/A", "delta": "Evaluated positive gains", "tone": "positive" if (not np.isnan(transfer_hit_rate) and transfer_hit_rate >= 55) else "warning"},
             {"label": "Prediction Calibration", "value": f"{pred_calibration:.1f}%" if not np.isnan(pred_calibration) else "N/A", "delta": "Predicted vs realized", "tone": "positive" if (not np.isnan(pred_calibration) and pred_calibration >= 65) else "warning"},
             {"label": "Value Growth Efficiency", "value": f"{value_eff:+.2f}M/GW", "delta": "Squad value trend per GW", "tone": "positive" if value_eff >= 0 else "danger"},
         ],
-        compact=compact_layout,
+        compact=False,
     )
-    if not np.isnan(last5_avg) and not np.isnan(prior5_avg):
+    if "expected_pts" in my_team.columns:
+        xpts_total_tracker = float(pd.to_numeric(my_team["expected_pts"], errors="coerce").fillna(0.0).sum())
+        q10_total = float(pd.to_numeric(my_team.get("pts_low", 0.0), errors="coerce").fillna(0.0).sum()) if "pts_low" in my_team.columns else np.nan
+        q90_total = float(pd.to_numeric(my_team.get("pts_high", 0.0), errors="coerce").fillna(0.0).sum()) if "pts_high" in my_team.columns else np.nan
+        xpts_delta = (
+            f"Q10 {q10_total:.1f} · Q90 {q90_total:.1f}"
+            if not np.isnan(q10_total) and not np.isnan(q90_total)
+            else "Rotation-adjusted expected points"
+        )
+        render_stat_cards(
+            [
+                {"label": "Current Squad xPts", "value": f"{xpts_total_tracker:.1f}", "delta": xpts_delta, "tone": "neutral"},
+            ]
+        )
+    if len(history) >= 10 and not np.isnan(last5_avg) and not np.isnan(prior5_avg):
         render_section_header("Period Comparison: Last 5 vs Prior 5")
         cmp_df = pd.DataFrame(
             [
@@ -2749,7 +4328,6 @@ elif page == "Season Tracker":
             for h in hurt or ["No major drag detected yet."]:
                 st.markdown(f"- {h}")
 
-    history = value_data["history"]
     if len(history) > 1:
         gws_hist = sorted(history.keys(), key=int)
         vals_hist = [float(history[g]) for g in gws_hist]
@@ -2759,24 +4337,24 @@ elif page == "Season Tracker":
             x=[f"GW{g}" for g in gws_hist],
             y=vals_hist,
             mode="lines+markers",
-            line=dict(color="#27e8a7", width=2.5),
-            marker=dict(size=8, color="#27e8a7",
-                        line=dict(color="white", width=1.5)),
+            line=dict(color=PLOTLY_PRIMARY, width=2.5),
+            marker=dict(size=8, color=PLOTLY_PRIMARY,
+                        line=dict(color=PLOTLY_SURFACE, width=1.5)),
             fill="tozeroy",
-            fillcolor="rgba(56, 217, 150, 0.08)",
+            fillcolor=_hex_to_rgba(PLOTLY_PRIMARY, 0.08),
             hovertemplate="<b>%{x}</b><br>Value: £%{y:.1f}M<extra></extra>",
             name="Squad Value",
         ))
         fig.add_hline(
             y=baseline_value_num,
-            line_dash="dash", line_color="#37b6ff",
+            line_dash="dash", line_color=PLOTLY_ACCENT,
             annotation_text=f"Baseline £{baseline_value_num:.1f}M",
-            annotation_font=dict(color="#37b6ff"),
+            annotation_font=dict(color=PLOTLY_ACCENT),
         )
         fig.update_layout(
             **PLOTLY_THEME, height=300,
             title=dict(text="Squad Value Over Time",
-                       font=dict(color="#37b6ff", size=13, family="Space Mono")),
+                       font=dict(color=PLOTLY_ACCENT, size=13, family="Space Mono")),
             yaxis_title="Value (£M)",
             margin=dict(l=10, r=10, t=50, b=30),
         )
@@ -2809,17 +4387,17 @@ elif page == "Season Tracker":
                 fig.add_trace(go.Bar(
                     x=evaluated["player_in"],
                     y=evaluated["predicted_gain"],
-                    name="Predicted", marker_color="#37b6ff",
+                    name="Predicted", marker_color=PLOTLY_ACCENT,
                 ))
                 fig.add_trace(go.Bar(
                     x=evaluated["player_in"],
                     y=evaluated["actual_gain"],
-                    name="Actual", marker_color="#27e8a7",
+                    name="Actual", marker_color=PLOTLY_PRIMARY,
                 ))
                 fig.update_layout(
                     **PLOTLY_THEME, barmode="group", height=320,
                     title=dict(text="Transfer Prediction Accuracy",
-                               font=dict(color="#37b6ff",size=13,family="Space Mono")),
+                               font=dict(color=PLOTLY_ACCENT,size=13,family="Space Mono")),
                     xaxis_tickangle=-30,
                     margin=dict(l=10,r=10,t=50,b=80),
                 )
@@ -2877,7 +4455,7 @@ elif page == "Season Tracker":
         fig = px.bar(
             rmse_df, x="Position", y="RMSE (pts)",
             color="RMSE (pts)",
-            color_continuous_scale=[[0,"#27e8a7"],[0.5,"#ffb547"],[1,"#ff5d73"]],
+            color_continuous_scale=PLOTLY_RMSE_SCALE,
             text="RMSE (pts)",
         )
         fig.update_traces(texttemplate="%{text:.3f}", textposition="outside")
@@ -2889,6 +4467,15 @@ elif page == "Season Tracker":
                    "GK models typically most accurate due to consistent playing time.")
 
 elif page == "AI Analyst":
+    render_page_hero(
+        "AI Analyst",
+        "Ask grounded FPL questions using your current squad context, transfer candidates, and live news signals.",
+        [
+            "Groq + live data",
+            "Chat + quick prompts",
+            f"GW{current_gw+1} context",
+        ],
+    )
 
     render_section_header("AI Analyst | Powered by Groq + Live Data")
 
@@ -2897,24 +4484,61 @@ elif page == "AI Analyst":
         st.info("Run: pip install groq feedparser newsapi-python understat nest_asyncio")
         st.stop()
 
-    status_items = [
-        ("LLM (Groq)", ANALYST_STATUS.get("groq", False), "Ready", "Not installed"),
-        ("NewsAPI", ANALYST_STATUS.get("newsapi", False), "Ready", "No key"),
-        ("RSS Feeds", ANALYST_STATUS.get("feedparser", False), "Ready", "Not installed"),
-        ("Understat xG", ANALYST_STATUS.get("understat", False), "Ready", "Not installed"),
-        ("The Odds API", ANALYST_STATUS.get("odds_api", False), "Ready", "No key"),
-    ]
-    status_cols = st.columns(len(status_items))
-    for i, (label, ok, ok_text, fail_text) in enumerate(status_items):
-        status_cols[i].markdown(
-            f"<div class='kpi-block'><div class='kpi-label'>{label}</div>"
-            f"<div style='color:{'#27e8a7' if ok else '#ffb547'};font-weight:800;'>"
-            f"{ok_text if ok else fail_text}</div></div>",
-            unsafe_allow_html=True,
-        )
+    if "analyst_messages" not in st.session_state:
+        st.session_state["analyst_messages"] = []
+    if "analyst_sources" not in st.session_state:
+        st.session_state["analyst_sources"] = []
+    if "analyst_context" not in st.session_state:
+        st.session_state["analyst_context"] = {}
 
-    if ANALYST_STATUS.get("odds_api", False):
-        st.caption(get_odds_usage_summary())
+    render_stat_cards(
+        [
+            {"label": "Messages", "value": str(len(st.session_state.get('analyst_messages', []))), "delta": "Current thread", "tone": "neutral"},
+            {"label": "Squad Context", "value": str(len(my_team)), "delta": "Players in active squad", "tone": "positive"},
+            {"label": "Transfer Context", "value": "Ready", "delta": "ILP + hit analysis loaded on demand", "tone": "neutral"},
+            {"label": "Advanced Metrics", "value": "Enabled" if advanced_pipeline_enabled else "Fallback", "delta": "xPts / intervals / cap EV context", "tone": "positive" if advanced_pipeline_enabled else "warning"},
+        ]
+    )
+
+    user_input = st.chat_input("Ask anything about your squad, transfers, captain, injuries...")
+
+    # Chat thread directly below the composer.
+    with st.container():
+        for msg in st.session_state["analyst_messages"]:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+                if msg["role"] == "assistant" and msg.get("sources_display"):
+                    with st.expander("Sources & Confidence", expanded=False):
+                        st.markdown(msg["sources_display"])
+                        conf_label = msg.get("confidence_label", "?")
+                        conf_score = msg.get("confidence_score", 0)
+                        conf_color = (
+                            "var(--primary)" if conf_label == "HIGH"
+                            else "var(--warning)" if conf_label == "MEDIUM"
+                            else "var(--danger)"
+                        )
+                        st.markdown(
+                            f"<div class='kpi-block' style='display:inline-block; padding:0.5rem 1rem;'>"
+                            f"<div class='kpi-label'>Source Confidence</div>"
+                            f"<div style='color:{conf_color}; font-weight:800; font-size:1.2rem;'>"
+                            f"{conf_label} ({conf_score:.0f}%)</div></div>",
+                            unsafe_allow_html=True,
+                        )
+
+    render_section_header("Or try a quick question:")
+    q_cols = st.columns(4)
+    quick_q = None
+    for i, q in enumerate(QUICK_QUESTIONS[:4]):
+        with q_cols[i]:
+            if st.button(q, use_container_width=True, key=f"qq_{i}"):
+                quick_q = q
+    if len(QUICK_QUESTIONS) > 4:
+        with st.expander("More questions", expanded=False):
+            more_cols = st.columns(2)
+            for i, q in enumerate(QUICK_QUESTIONS[4:]):
+                with more_cols[i % 2]:
+                    if st.button(q, use_container_width=True, key=f"qq_more_{i}"):
+                        quick_q = q
 
     # Optional proactive alerts sourced from Phase 7 logic.
     try:
@@ -2942,49 +4566,27 @@ elif page == "AI Analyst":
             else:
                 st.info(f"{title}: {message}")
 
-    st.divider()
-
-    if "analyst_messages" not in st.session_state:
-        st.session_state["analyst_messages"] = []
-    if "analyst_sources" not in st.session_state:
-        st.session_state["analyst_sources"] = []
-    if "analyst_context" not in st.session_state:
-        st.session_state["analyst_context"] = {}
-
-    render_section_header("Quick Questions")
-    q_cols = st.columns(2 if compact_layout else 4)
-    quick_q = None
-    for i, q in enumerate(QUICK_QUESTIONS[:8]):
-        with q_cols[i % len(q_cols)]:
-            if st.button(q, use_container_width=True, key=f"qq_{i}"):
-                quick_q = q
-
-    st.divider()
-
-    with st.container():
-        for msg in st.session_state["analyst_messages"]:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
-                if msg["role"] == "assistant" and msg.get("sources_display"):
-                    with st.expander("Sources & Confidence", expanded=False):
-                        st.markdown(msg["sources_display"])
-                        conf_label = msg.get("confidence_label", "?")
-                        conf_score = msg.get("confidence_score", 0)
-                        conf_color = (
-                            "#27e8a7" if conf_label == "HIGH"
-                            else "#ffb547" if conf_label == "MEDIUM"
-                            else "#ff5d73"
-                        )
-                        st.markdown(
-                            f"<div class='kpi-block' style='display:inline-block; padding:0.5rem 1rem;'>"
-                            f"<div class='kpi-label'>Source Confidence</div>"
-                            f"<div style='color:{conf_color}; font-weight:800; font-size:1.2rem;'>"
-                            f"{conf_label} ({conf_score:.0f}%)</div></div>",
-                            unsafe_allow_html=True,
-                        )
-
-    st.divider()
-    user_input = st.chat_input("Ask anything about your squad, transfers, captain, injuries...")
+    with st.expander("How it works", expanded=False):
+        adv_ctx_note = (
+            "<br><br><b>Advanced model context enabled:</b> expected_pts, confidence intervals, captain EV, and price movement projections."
+            if advanced_pipeline_enabled else ""
+        )
+        st.markdown(
+            f"""
+            <div class='fpl-card' style='border-color:color-mix(in srgb, var(--accent) 28%, transparent); margin:0;'>
+                <div class='kpi-label'>HOW IT WORKS</div>
+                <div style='font-size:0.9rem; color:var(--muted); margin-top:0.5rem; line-height:1.6;'>
+                    The AI Analyst combines your live squad data with real-time news from
+                    multiple sources to give grounded, data-driven FPL advice.
+                    {adv_ctx_note}
+                    <br><br>
+                    <b>Sources consulted:</b> FPL API | API-Football lineups | NewsAPI |
+                    BBC Sport | Sky Sports | Google News | Odds API | Understat
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     question = quick_q or user_input
     if question:
@@ -3058,24 +4660,24 @@ elif page == "AI Analyst":
             st.session_state["analyst_messages"] = []
             st.rerun()
 
-    if not st.session_state["analyst_messages"]:
-        st.markdown(
-            """
-            <div class='fpl-card' style='border-color:#37b6ff40;'>
-                <div class='kpi-label'>HOW IT WORKS</div>
-                <div style='font-size:0.9rem; color:#c8d8f0; margin-top:0.5rem; line-height:1.6;'>
-                    The AI Analyst combines your live squad data with real-time news from
-                    multiple sources to give you grounded, data-driven FPL advice.
-                    <br><br>
-                    <b>Sources consulted:</b> FPL API | API-Football lineups | NewsAPI |
-                    BBC Sport | Sky Sports | Google News | Odds API | Understat
-                    <br><br>
-                    <b>Click a quick question above or type your own below.</b>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    with st.expander("System Status", expanded=False):
+        status_items = [
+            ("LLM (Groq)", ANALYST_STATUS.get("groq", False), "Ready", "Not installed"),
+            ("NewsAPI", ANALYST_STATUS.get("newsapi", False), "Ready", "No key"),
+            ("RSS Feeds", ANALYST_STATUS.get("feedparser", False), "Ready", "Not installed"),
+            ("Understat xG", ANALYST_STATUS.get("understat", False), "Ready", "Not installed"),
+            ("The Odds API", ANALYST_STATUS.get("odds_api", False), "Ready", "No key"),
+        ]
+        status_cols = st.columns(len(status_items))
+        for i, (label, ok, ok_text, fail_text) in enumerate(status_items):
+            status_cols[i].markdown(
+                f"<div class='kpi-block'><div class='kpi-label'>{label}</div>"
+                f"<div style='color:{'var(--primary)' if ok else 'var(--warning)'};font-weight:800;'>"
+                f"{ok_text if ok else fail_text}</div></div>",
+                unsafe_allow_html=True,
+            )
+        if ANALYST_STATUS.get("odds_api", False):
+            st.caption(get_odds_usage_summary())
 
     st.divider()
     st.caption(
@@ -3086,10 +4688,6 @@ elif page == "AI Analyst":
 
 
 
-st.caption("FPL AI ASSISTANT | PHASES 1-4 BACKEND | BUILT WITH STREAMLIT + PLOTLY")
-st.caption("Always verify bank balance in the FPL app before confirming transfers.")
-
-
-
-
-
+if page != "AI Analyst":
+    st.caption("FPL AI ASSISTANT | PHASES 1-4 BACKEND | BUILT WITH STREAMLIT + PLOTLY")
+    st.caption("Always verify bank balance in the FPL app before confirming transfers.")

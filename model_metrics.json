@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-02-22T18:51:59",
+  "positions": {
+    "Goalkeeper": {
+      "rmse": 0.30964982127870205,
+      "r2": 0.9836506843566895,
+      "cv_rmse": 1.6743059873584316,
+      "cv_r2": 0.2420462965965271,
+      "train_size": 1011,
+      "test_size": 94,
+      "shap_top_features": {
+        "ewm3_mins": 0.712,
+        "ewm3_pts": 0.4363,
+        "price": 0.1105,
+        "gw_number": 0.1054,
+        "roll3_saves": 0.1015
+      }
+    },
+    "Defender": {
+      "rmse": 1.0648170339097445,
+      "r2": 0.7960231304168701,
+      "cv_rmse": 2.0290069663467523,
+      "cv_r2": 0.22516506910324097,
+      "train_size": 2899,
+      "test_size": 265,
+      "shap_top_features": {
+        "ewm3_mins": 0.7462,
+        "ewm3_pts": 0.2671,
+        "roll3_mins": 0.2614,
+        "roll5_pts": 0.1741,
+        "price": 0.1715
+      }
+    },
+    "Midfielder": {
+      "rmse": 1.0987153289324159,
+      "r2": 0.7035437226295471,
+      "cv_rmse": 1.8934374973920214,
+      "cv_r2": 0.2961749831835429,
+      "train_size": 3970,
+      "test_size": 367,
+      "shap_top_features": {
+        "ewm3_mins": 0.7537,
+        "ewm3_creativity": 0.1913,
+        "ewm3_pts": 0.1708,
+        "ewm5_pts": 0.1374,
+        "roll3_mins": 0.137
+      }
+    },
+    "Forward": {
+      "rmse": 0.49403233905975996,
+      "r2": 0.9612763524055481,
+      "cv_rmse": 2.1457702874474927,
+      "cv_r2": 0.2382418711980184,
+      "train_size": 974,
+      "test_size": 92,
+      "shap_top_features": {
+        "ewm3_mins": 0.5156,
+        "ewm3_pts": 0.4302,
+        "ewm3_creativity": 0.1966,
+        "roll3_creativity": 0.1593,
+        "roll5_pts": 0.1283
+      }
+    }
+  }
+}

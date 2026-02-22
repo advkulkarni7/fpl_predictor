@@ -1,0 +1,1231 @@
+2026-02-20 16:36:03,257 [INFO] ============================================================
+2026-02-20 16:36:03,257 [INFO]   FPL AI ASSISTANT � Phase 1 (v3 Final)
+2026-02-20 16:36:03,257 [INFO] ============================================================
+2026-02-20 16:36:05,069 [INFO] Fetching history for 817 players...
+2026-02-20 16:36:05,069 [INFO]   0/817
+2026-02-20 16:36:29,125 [INFO]   50/817
+2026-02-20 16:36:53,259 [INFO]   100/817
+2026-02-20 16:37:16,630 [INFO]   150/817
+2026-02-20 16:37:39,216 [INFO]   200/817
+2026-02-20 16:38:00,837 [INFO]   250/817
+2026-02-20 16:38:21,250 [INFO]   300/817
+2026-02-20 16:38:42,190 [INFO]   350/817
+2026-02-20 16:39:03,207 [INFO]   400/817
+2026-02-20 16:39:24,358 [INFO]   450/817
+2026-02-20 16:39:45,060 [INFO]   500/817
+2026-02-20 16:40:07,491 [INFO]   550/817
+2026-02-20 16:40:30,078 [INFO]   600/817
+2026-02-20 16:40:52,213 [INFO]   650/817
+2026-02-20 16:41:13,418 [INFO]   700/817
+2026-02-20 16:41:36,830 [INFO]   750/817
+2026-02-20 16:41:58,816 [INFO]   800/817
+2026-02-20 16:42:07,012 [INFO] Done. 817 players processed.
+2026-02-20 16:42:07,734 [INFO]   Training Goalkeeper model...
+2026-02-20 16:42:08,309 [INFO]   Goalkeeper: RMSE=1.573  R�=0.332  (train=1726, test=562)
+2026-02-20 16:42:08,312 [INFO]   Top features: {'roll3_mins': np.float64(0.355), 'roll3_influence': np.float64(0.14), 'price': np.float64(0.099), 'opponent_encoded': np.float64(0.061), 'roll5_pts': np.float64(0.057)}
+2026-02-20 16:42:08,312 [INFO]   Training Defender model...
+2026-02-20 16:42:10,038 [INFO]   Defender: RMSE=2.103  R�=0.158  (train=4941, test=1606)
+2026-02-20 16:42:10,040 [INFO]   Top features: {'roll3_mins': np.float64(0.342), 'price': np.float64(0.119), 'roll3_influence': np.float64(0.109), 'roll5_pts': np.float64(0.063), 'pts_per_90': np.float64(0.063)}
+2026-02-20 16:42:10,041 [INFO]   Training Midfielder model...
+2026-02-20 16:42:12,708 [INFO]   Midfielder: RMSE=1.920  R�=0.273  (train=6667, test=2208)
+2026-02-20 16:42:12,711 [INFO]   Top features: {'roll3_mins': np.float64(0.328), 'roll3_influence': np.float64(0.089), 'roll3_creativity': np.float64(0.086), 'roll3_pts': np.float64(0.08), 'price': np.float64(0.072)}
+2026-02-20 16:42:12,712 [INFO]   Training Forward model...
+2026-02-20 16:42:13,491 [INFO]   Forward: RMSE=2.336  R�=0.073  (train=1631, test=545)
+2026-02-20 16:42:13,494 [INFO]   Top features: {'roll3_mins': np.float64(0.276), 'price': np.float64(0.118), 'roll3_creativity': np.float64(0.092), 'roll3_influence': np.float64(0.075), 'roll3_threat': np.float64(0.073)}
+2026-02-20 16:53:16,730 [INFO] ============================================================
+2026-02-20 16:53:16,730 [INFO]   FPL AI ASSISTANT � Phase 1 (v3 Final)
+2026-02-20 16:53:16,731 [INFO] ============================================================
+2026-02-20 16:53:18,446 [INFO]   Training Goalkeeper model...
+2026-02-20 16:53:18,962 [INFO]   Goalkeeper: RMSE=1.573  R�=0.332  (train=1726, test=562)
+2026-02-20 16:53:18,964 [INFO]   Top features: {'roll3_mins': np.float64(0.355), 'roll3_influence': np.float64(0.14), 'price': np.float64(0.099), 'opponent_encoded': np.float64(0.061), 'roll5_pts': np.float64(0.057)}
+2026-02-20 16:53:18,965 [INFO]   Training Defender model...
+2026-02-20 16:53:20,562 [INFO]   Defender: RMSE=2.103  R�=0.158  (train=4941, test=1606)
+2026-02-20 16:53:20,564 [INFO]   Top features: {'roll3_mins': np.float64(0.342), 'price': np.float64(0.119), 'roll3_influence': np.float64(0.109), 'roll5_pts': np.float64(0.063), 'pts_per_90': np.float64(0.063)}
+2026-02-20 16:53:20,564 [INFO]   Training Midfielder model...
+2026-02-20 16:53:23,066 [INFO]   Midfielder: RMSE=1.920  R�=0.273  (train=6667, test=2208)
+2026-02-20 16:53:23,068 [INFO]   Top features: {'roll3_mins': np.float64(0.328), 'roll3_influence': np.float64(0.089), 'roll3_creativity': np.float64(0.086), 'roll3_pts': np.float64(0.08), 'price': np.float64(0.072)}
+2026-02-20 16:53:23,068 [INFO]   Training Forward model...
+2026-02-20 16:53:23,788 [INFO]   Forward: RMSE=2.336  R�=0.073  (train=1631, test=545)
+2026-02-20 16:53:23,790 [INFO]   Top features: {'roll3_mins': np.float64(0.276), 'price': np.float64(0.118), 'roll3_creativity': np.float64(0.092), 'roll3_influence': np.float64(0.075), 'roll3_threat': np.float64(0.073)}
+2026-02-20 18:00:15,381 [INFO] ============================================================
+2026-02-20 18:00:15,381 [INFO]   FPL AI ASSISTANT — Phase 1 (v3 Final)
+2026-02-20 18:00:15,382 [INFO] ============================================================
+2026-02-20 18:00:15,382 [INFO] ⬇️  Fetching bootstrap data...
+2026-02-20 18:00:16,368 [INFO] 📅 Last completed GW: 26  ->  Predicting GW27
+2026-02-20 18:00:16,369 [INFO] ⬇️  Fetching your team...
+2026-02-20 18:00:16,711 [INFO] ✅ Team fetched — 15 players.
+2026-02-20 18:00:17,058 [INFO] 💰 Bank: £1.8M  |  Transfers: Free transfer already used this GW
+2026-02-20 18:00:17,059 [INFO] 📚 Loading player history...
+2026-02-20 18:00:17,059 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 18:00:17,176 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 18:00:17,176 [INFO] 🤖 Training position-specific models...
+2026-02-20 18:00:17,176 [INFO]   Training Goalkeeper model...
+2026-02-20 18:00:17,564 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 18:00:17,567 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 18:00:17,567 [INFO]   Training Defender model...
+2026-02-20 18:00:18,635 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 18:00:18,637 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 18:00:18,637 [INFO]   Training Midfielder model...
+2026-02-20 18:00:20,292 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 18:00:20,294 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 18:00:20,295 [INFO]   Training Forward model...
+2026-02-20 18:00:20,811 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 18:00:20,815 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 18:00:20,891 [INFO] 💾 Models saved to fpl_model.pkl
+2026-02-20 18:00:20,892 [INFO] 🔮 Predicting GW27 scores...
+2026-02-20 18:00:21,198 [INFO] ✅ Predictions saved to fpl_predictions.csv
+2026-02-20 18:00:21,198 [INFO] ✅ Ready for Phase 2
+2026-02-20 18:01:04,853 [INFO] ================================================================================
+2026-02-20 18:01:04,853 [INFO]   FPL AI ASSISTANT — Phase 2: Fixture Run Analysis (v3)
+2026-02-20 18:01:04,853 [INFO] ================================================================================
+2026-02-20 18:01:04,853 [INFO] Fetching bootstrap & fixtures...
+2026-02-20 18:01:05,864 [INFO] Last completed GW: 26  ->  Analysing GW27 to GW31
+2026-02-20 18:01:05,864 [INFO] Fetching your team...
+2026-02-20 18:01:06,218 [INFO] Team fetched — 15 players.
+2026-02-20 18:01:06,752 [INFO] Bank: £1.8M  |  Transfers: Free transfer already used this GW
+2026-02-20 18:01:06,752 [INFO] Loading player history...
+2026-02-20 18:01:06,753 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 18:01:06,871 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 18:01:06,871 [INFO] Training position-specific models...
+2026-02-20 18:01:06,871 [INFO]   Training Goalkeeper model...
+2026-02-20 18:01:07,251 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 18:01:07,254 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 18:01:07,254 [INFO]   Training Defender model...
+2026-02-20 18:01:08,289 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 18:01:08,291 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 18:01:08,291 [INFO]   Training Midfielder model...
+2026-02-20 18:01:09,846 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 18:01:09,850 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 18:01:09,850 [INFO]   Training Forward model...
+2026-02-20 18:01:10,354 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 18:01:10,356 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 18:01:10,387 [INFO] Predicting GW27 scores...
+2026-02-20 18:01:10,647 [INFO] Building custom difficulty ratings...
+2026-02-20 18:01:10,672 [INFO] Custom difficulty built for 20 teams.
+2026-02-20 18:01:10,673 [INFO] Building team form...
+2026-02-20 18:01:10,678 [INFO] Team form built for 20 teams.
+2026-02-20 18:01:10,679 [INFO] Building opponent scoring map...
+2026-02-20 18:01:10,771 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-20 18:01:10,772 [INFO] Checking chip status...
+2026-02-20 18:01:11,286 [INFO] Building fixture run (next 5 GWs)...
+2026-02-20 18:01:11,464 [INFO] Enriched predictions saved to fpl_predictions_phase2.csv
+2026-02-20 18:01:11,464 [INFO] Ready for Phase 3 (Team Composition Constraints)
+2026-02-20 18:02:24,573 [INFO] ================================================================================
+2026-02-20 18:02:24,574 [INFO]   FPL AI ASSISTANT — Phase 2: Fixture Run Analysis (v3)
+2026-02-20 18:02:24,574 [INFO] ================================================================================
+2026-02-20 18:02:24,574 [INFO] Fetching bootstrap & fixtures...
+2026-02-20 18:02:25,582 [INFO] Last completed GW: 26  ->  Analysing GW27 to GW31
+2026-02-20 18:02:25,582 [INFO] Fetching your team...
+2026-02-20 18:02:25,890 [INFO] Team fetched — 15 players.
+2026-02-20 18:02:26,198 [INFO] Bank: £1.8M  |  Transfers: Free transfer already used this GW
+2026-02-20 18:02:26,198 [INFO] Loading player history...
+2026-02-20 18:02:26,199 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 18:02:26,295 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 18:02:26,295 [INFO] Training position-specific models...
+2026-02-20 18:02:26,295 [INFO]   Training Goalkeeper model...
+2026-02-20 18:02:26,665 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 18:02:26,670 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 18:02:26,670 [INFO]   Training Defender model...
+2026-02-20 18:02:27,706 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 18:02:27,709 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 18:02:27,709 [INFO]   Training Midfielder model...
+2026-02-20 18:02:29,248 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 18:02:29,252 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 18:02:29,253 [INFO]   Training Forward model...
+2026-02-20 18:02:29,758 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 18:02:29,760 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 18:02:29,791 [INFO] Predicting GW27 scores...
+2026-02-20 18:02:30,064 [INFO] Building custom difficulty ratings...
+2026-02-20 18:02:30,073 [INFO] Custom difficulty built for 20 teams.
+2026-02-20 18:02:30,074 [INFO] Building team form...
+2026-02-20 18:02:30,079 [INFO] Team form built for 20 teams.
+2026-02-20 18:02:30,080 [INFO] Building opponent scoring map...
+2026-02-20 18:02:30,134 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-20 18:02:30,135 [INFO] Checking chip status...
+2026-02-20 18:02:30,473 [INFO] Building fixture run (next 5 GWs)...
+2026-02-20 18:02:30,647 [INFO] Enriched predictions saved to fpl_predictions_phase2.csv
+2026-02-20 18:02:30,647 [INFO] Ready for Phase 3 (Team Composition Constraints)
+2026-02-20 18:03:38,514 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 18:03:38,667 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 18:03:38,667 [INFO]   Training Goalkeeper model...
+2026-02-20 18:03:39,073 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 18:03:39,075 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 18:03:39,076 [INFO]   Training Defender model...
+2026-02-20 18:03:40,182 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 18:03:40,184 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 18:03:40,185 [INFO]   Training Midfielder model...
+2026-02-20 18:03:41,835 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 18:03:41,838 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 18:03:41,839 [INFO]   Training Forward model...
+2026-02-20 18:03:42,412 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 18:03:42,414 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 18:03:42,554 [INFO] Loaded models from fpl_model.pkl for compatibility.
+2026-02-20 18:05:04,680 [INFO] ===========================================================================
+2026-02-20 18:05:04,680 [INFO]   FPL AI ASSISTANT — Phase 3: Transfer Optimizer (v3)
+2026-02-20 18:05:04,681 [INFO] ===========================================================================
+2026-02-20 18:05:04,681 [INFO] Fetching bootstrap & fixtures...
+2026-02-20 18:05:05,834 [INFO] GW26 completed -> predicting GW27
+2026-02-20 18:05:05,834 [INFO] Fetching your team...
+2026-02-20 18:05:06,169 [INFO] Team fetched — 15 players.
+2026-02-20 18:05:06,512 [INFO] Bank: £1.8M  |  Free transfer already used this GW
+2026-02-20 18:05:06,512 [INFO] Loading player history...
+2026-02-20 18:05:06,513 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 18:05:06,631 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 18:05:06,631 [INFO] Training position-specific models...
+2026-02-20 18:05:06,631 [INFO]   Training Goalkeeper model...
+2026-02-20 18:05:07,020 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 18:05:07,023 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 18:05:07,024 [INFO]   Training Defender model...
+2026-02-20 18:05:08,048 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 18:05:08,050 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 18:05:08,051 [INFO]   Training Midfielder model...
+2026-02-20 18:05:09,582 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 18:05:09,585 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 18:05:09,585 [INFO]   Training Forward model...
+2026-02-20 18:05:10,114 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 18:05:10,116 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 18:05:10,198 [INFO] Predicting GW27 scores...
+2026-02-20 18:05:10,486 [INFO] Building context maps...
+2026-02-20 18:05:10,497 [INFO] Custom difficulty built for 20 teams.
+2026-02-20 18:05:10,505 [INFO] Team form built for 20 teams.
+2026-02-20 18:05:10,515 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-20 18:05:10,872 [INFO] Building fixture run (next 5 GWs)...
+2026-02-20 18:05:13,855 [INFO] Transfer logged: OUT Patrick Dorgu -> IN Virgil van Dijk (predicted gain: 8.17)
+2026-02-20 18:05:15,138 [INFO] Predictions saved to fpl_predictions_phase3.csv
+2026-02-20 18:05:15,138 [INFO] Ready for Phase 4 (Starting XI + Formation Optimizer)
+2026-02-20 19:12:14,980 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 19:12:15,117 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 19:12:15,117 [INFO]   Training Goalkeeper model...
+2026-02-20 19:12:15,526 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 19:12:15,530 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 19:12:15,530 [INFO]   Training Defender model...
+2026-02-20 19:12:16,630 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 19:12:16,633 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 19:12:16,633 [INFO]   Training Midfielder model...
+2026-02-20 19:12:18,312 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 19:12:18,315 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 19:12:18,315 [INFO]   Training Forward model...
+2026-02-20 19:12:18,909 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 19:12:18,913 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 19:12:19,236 [INFO] Custom difficulty built for 20 teams.
+2026-02-20 19:12:19,244 [INFO] Team form built for 20 teams.
+2026-02-20 19:12:19,257 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-20 19:17:29,229 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 19:17:29,343 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 19:17:29,344 [INFO]   Training Goalkeeper model...
+2026-02-20 19:17:29,730 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 19:17:29,732 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 19:17:29,733 [INFO]   Training Defender model...
+2026-02-20 19:17:30,808 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 19:17:30,811 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 19:17:30,811 [INFO]   Training Midfielder model...
+2026-02-20 19:17:32,411 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 19:17:32,415 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 19:17:32,415 [INFO]   Training Forward model...
+2026-02-20 19:17:32,949 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 19:17:32,952 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 19:17:33,250 [INFO] Custom difficulty built for 20 teams.
+2026-02-20 19:17:33,257 [INFO] Team form built for 20 teams.
+2026-02-20 19:17:33,266 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-20 19:23:47,967 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 19:23:48,085 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 19:23:48,085 [INFO]   Training Goalkeeper model...
+2026-02-20 19:23:48,477 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 19:23:48,481 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 19:23:48,481 [INFO]   Training Defender model...
+2026-02-20 19:23:49,659 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 19:23:49,662 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 19:23:49,663 [INFO]   Training Midfielder model...
+2026-02-20 19:23:51,426 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 19:23:51,429 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 19:23:51,429 [INFO]   Training Forward model...
+2026-02-20 19:23:52,022 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 19:23:52,024 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 19:23:52,347 [INFO] Custom difficulty built for 20 teams.
+2026-02-20 19:23:52,352 [INFO] Team form built for 20 teams.
+2026-02-20 19:23:52,365 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-20 19:26:30,432 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 19:26:30,553 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 19:26:30,553 [INFO]   Training Goalkeeper model...
+2026-02-20 19:26:30,985 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 19:26:30,988 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 19:26:30,988 [INFO]   Training Defender model...
+2026-02-20 19:26:32,081 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 19:26:32,083 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 19:26:32,084 [INFO]   Training Midfielder model...
+2026-02-20 19:26:33,689 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 19:26:33,692 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 19:26:33,693 [INFO]   Training Forward model...
+2026-02-20 19:26:34,243 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 19:26:34,246 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 19:26:34,535 [INFO] Custom difficulty built for 20 teams.
+2026-02-20 19:26:34,541 [INFO] Team form built for 20 teams.
+2026-02-20 19:26:34,550 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-20 19:30:51,931 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 19:30:52,044 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 19:30:52,044 [INFO]   Training Goalkeeper model...
+2026-02-20 19:30:52,474 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 19:30:52,477 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 19:30:52,477 [INFO]   Training Defender model...
+2026-02-20 19:30:53,568 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 19:30:53,571 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 19:30:53,571 [INFO]   Training Midfielder model...
+2026-02-20 19:30:55,208 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 19:30:55,210 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 19:30:55,211 [INFO]   Training Forward model...
+2026-02-20 19:30:55,756 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 19:30:55,761 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 19:30:56,118 [INFO] Custom difficulty built for 20 teams.
+2026-02-20 19:30:56,127 [INFO] Team form built for 20 teams.
+2026-02-20 19:30:56,135 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-20 20:05:55,398 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 20:05:55,530 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 20:05:55,530 [INFO]   Training Goalkeeper model...
+2026-02-20 20:05:55,974 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 20:05:55,976 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 20:05:55,977 [INFO]   Training Defender model...
+2026-02-20 20:05:57,071 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 20:05:57,074 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 20:05:57,075 [INFO]   Training Midfielder model...
+2026-02-20 20:05:58,719 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 20:05:58,722 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 20:05:58,722 [INFO]   Training Forward model...
+2026-02-20 20:05:59,260 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 20:05:59,264 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 20:05:59,567 [INFO] Custom difficulty built for 20 teams.
+2026-02-20 20:05:59,573 [INFO] Team form built for 20 teams.
+2026-02-20 20:05:59,584 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-20 20:06:28,868 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 20:06:28,983 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 20:06:28,983 [INFO]   Training Goalkeeper model...
+2026-02-20 20:06:29,383 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 20:06:29,386 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 20:06:29,387 [INFO]   Training Defender model...
+2026-02-20 20:06:30,475 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 20:06:30,478 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 20:06:30,478 [INFO]   Training Midfielder model...
+2026-02-20 20:06:32,123 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 20:06:32,126 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 20:06:32,127 [INFO]   Training Forward model...
+2026-02-20 20:06:32,678 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 20:06:32,682 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 20:06:32,974 [INFO] Custom difficulty built for 20 teams.
+2026-02-20 20:06:32,982 [INFO] Team form built for 20 teams.
+2026-02-20 20:06:32,993 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-20 20:13:10,314 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 20:13:10,427 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 20:13:10,427 [INFO]   Training Goalkeeper model...
+2026-02-20 20:13:10,907 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 20:13:10,910 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 20:13:10,910 [INFO]   Training Defender model...
+2026-02-20 20:13:11,995 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 20:13:11,998 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 20:13:11,998 [INFO]   Training Midfielder model...
+2026-02-20 20:13:13,623 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 20:13:13,627 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 20:13:13,627 [INFO]   Training Forward model...
+2026-02-20 20:13:14,181 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 20:13:14,185 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 20:13:14,496 [INFO] Custom difficulty built for 20 teams.
+2026-02-20 20:13:14,503 [INFO] Team form built for 20 teams.
+2026-02-20 20:13:14,516 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-20 20:31:57,042 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 20:31:57,141 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 20:31:57,141 [INFO]   Training Goalkeeper model...
+2026-02-20 20:31:57,495 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 20:31:57,497 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 20:31:57,497 [INFO]   Training Defender model...
+2026-02-20 20:31:58,496 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 20:31:58,498 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 20:31:58,498 [INFO]   Training Midfielder model...
+2026-02-20 20:32:00,050 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 20:32:00,053 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 20:32:00,053 [INFO]   Training Forward model...
+2026-02-20 20:32:00,557 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 20:32:00,559 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 20:32:00,828 [INFO] Custom difficulty built for 20 teams.
+2026-02-20 20:32:00,833 [INFO] Team form built for 20 teams.
+2026-02-20 20:32:00,843 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-20 20:35:23,278 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 20:35:23,381 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 20:35:23,381 [INFO]   Training Goalkeeper model...
+2026-02-20 20:35:23,750 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 20:35:23,752 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 20:35:23,753 [INFO]   Training Defender model...
+2026-02-20 20:35:24,787 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 20:35:24,789 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 20:35:24,790 [INFO]   Training Midfielder model...
+2026-02-20 20:35:26,335 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 20:35:26,338 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 20:35:26,338 [INFO]   Training Forward model...
+2026-02-20 20:35:26,841 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 20:35:26,843 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 20:35:27,109 [INFO] Custom difficulty built for 20 teams.
+2026-02-20 20:35:27,114 [INFO] Team form built for 20 teams.
+2026-02-20 20:35:27,123 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-20 20:35:35,246 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 20:35:35,349 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 20:35:35,349 [INFO]   Training Goalkeeper model...
+2026-02-20 20:35:35,727 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 20:35:35,729 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 20:35:35,730 [INFO]   Training Defender model...
+2026-02-20 20:35:36,766 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 20:35:36,769 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 20:35:36,769 [INFO]   Training Midfielder model...
+2026-02-20 20:35:38,323 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 20:35:38,327 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 20:35:38,327 [INFO]   Training Forward model...
+2026-02-20 20:35:38,839 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 20:35:38,842 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 20:35:39,121 [INFO] Custom difficulty built for 20 teams.
+2026-02-20 20:35:39,127 [INFO] Team form built for 20 teams.
+2026-02-20 20:35:39,141 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-20 20:37:26,838 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 20:37:26,976 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 20:37:26,976 [INFO]   Training Goalkeeper model...
+2026-02-20 20:37:27,377 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 20:37:27,380 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 20:37:27,381 [INFO]   Training Defender model...
+2026-02-20 20:37:28,393 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 20:37:28,396 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 20:37:28,396 [INFO]   Training Midfielder model...
+2026-02-20 20:37:29,924 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 20:37:29,927 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 20:37:29,928 [INFO]   Training Forward model...
+2026-02-20 20:37:30,423 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 20:37:30,426 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 20:37:30,685 [INFO] Custom difficulty built for 20 teams.
+2026-02-20 20:37:30,691 [INFO] Team form built for 20 teams.
+2026-02-20 20:37:30,700 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-20 20:40:39,200 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 20:40:39,306 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 20:40:39,306 [INFO]   Training Goalkeeper model...
+2026-02-20 20:40:39,680 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 20:40:39,684 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 20:40:39,684 [INFO]   Training Defender model...
+2026-02-20 20:40:40,714 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 20:40:40,716 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 20:40:40,716 [INFO]   Training Midfielder model...
+2026-02-20 20:40:42,285 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 20:40:42,287 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 20:40:42,287 [INFO]   Training Forward model...
+2026-02-20 20:40:42,813 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 20:40:42,816 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 20:40:43,092 [INFO] Custom difficulty built for 20 teams.
+2026-02-20 20:40:43,098 [INFO] Team form built for 20 teams.
+2026-02-20 20:40:43,107 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-20 20:46:54,874 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 20:46:54,978 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 20:46:54,978 [INFO]   Training Goalkeeper model...
+2026-02-20 20:46:55,374 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 20:46:55,376 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 20:46:55,377 [INFO]   Training Defender model...
+2026-02-20 20:46:56,434 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 20:46:56,436 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 20:46:56,437 [INFO]   Training Midfielder model...
+2026-02-20 20:46:57,943 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 20:46:57,946 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 20:46:57,946 [INFO]   Training Forward model...
+2026-02-20 20:46:58,444 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 20:46:58,446 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 20:46:58,716 [INFO] Custom difficulty built for 20 teams.
+2026-02-20 20:46:58,721 [INFO] Team form built for 20 teams.
+2026-02-20 20:46:58,730 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-20 20:52:01,141 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 20:52:01,238 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 20:52:01,239 [INFO]   Training Goalkeeper model...
+2026-02-20 20:52:01,615 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 20:52:01,618 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 20:52:01,619 [INFO]   Training Defender model...
+2026-02-20 20:52:02,644 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 20:52:02,646 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 20:52:02,647 [INFO]   Training Midfielder model...
+2026-02-20 20:52:04,216 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 20:52:04,219 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 20:52:04,219 [INFO]   Training Forward model...
+2026-02-20 20:52:04,716 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 20:52:04,719 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 20:52:05,108 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-20 20:52:05,113 [INFO] Team form built for 20 teams.
+2026-02-20 20:52:05,123 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-20 21:04:55,914 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 21:04:56,046 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 21:04:56,047 [INFO]   Training Goalkeeper model...
+2026-02-20 21:04:56,521 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 21:04:56,525 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 21:04:56,526 [INFO]   Training Defender model...
+2026-02-20 21:04:57,608 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 21:04:57,610 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 21:04:57,611 [INFO]   Training Midfielder model...
+2026-02-20 21:04:59,219 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 21:04:59,221 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 21:04:59,222 [INFO]   Training Forward model...
+2026-02-20 21:04:59,787 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 21:04:59,790 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 21:05:00,086 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-20 21:05:00,092 [INFO] Team form built for 20 teams.
+2026-02-20 21:05:00,100 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-20 21:05:00,518 [INFO] Dynamic run thresholds: q33=2.84 q66=3.15 | Easy=186 Moderate=159 Tough=171
+2026-02-20 21:05:00,520 [INFO] avg_difficulty distribution: min=2.33 median=2.93 max=3.88
+2026-02-20 21:05:00,520 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=516)
+2026-02-20 21:36:40,289 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-20 21:36:40,462 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-20 21:36:40,462 [INFO]   Training Goalkeeper model...
+2026-02-20 21:36:41,029 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-20 21:36:41,033 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-20 21:36:41,034 [INFO]   Training Defender model...
+2026-02-20 21:36:42,380 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-20 21:36:42,382 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-20 21:36:42,383 [INFO]   Training Midfielder model...
+2026-02-20 21:36:44,320 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-20 21:36:44,324 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-20 21:36:44,324 [INFO]   Training Forward model...
+2026-02-20 21:36:45,045 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-20 21:36:45,048 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-20 21:36:45,448 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-20 21:36:45,453 [INFO] Team form built for 20 teams.
+2026-02-20 21:36:45,463 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-20 21:36:45,823 [INFO] Dynamic run thresholds: q33=2.84 q66=3.15 | Easy=186 Moderate=159 Tough=171
+2026-02-20 21:36:45,825 [INFO] avg_difficulty distribution: min=2.33 median=2.93 max=3.88
+2026-02-20 21:36:45,825 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=516)
+2026-02-21 01:01:07,917 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-21 01:01:08,808 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-21 01:01:08,809 [INFO]   Training Goalkeeper model...
+2026-02-21 01:01:09,704 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-21 01:01:09,717 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-21 01:01:09,717 [INFO]   Training Defender model...
+2026-02-21 01:01:11,123 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-21 01:01:11,127 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-21 01:01:11,127 [INFO]   Training Midfielder model...
+2026-02-21 01:01:13,184 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-21 01:01:13,187 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-21 01:01:13,187 [INFO]   Training Forward model...
+2026-02-21 01:01:13,905 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-21 01:01:13,908 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-21 01:01:14,405 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-21 01:01:14,411 [INFO] Team form built for 20 teams.
+2026-02-21 01:01:14,444 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-21 01:01:14,992 [INFO] Dynamic run thresholds: q33=2.84 q66=3.15 | Easy=186 Moderate=159 Tough=171
+2026-02-21 01:01:14,994 [INFO] avg_difficulty distribution: min=2.33 median=2.93 max=3.88
+2026-02-21 01:01:14,994 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=516)
+2026-02-21 01:08:56,850 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-21 01:08:56,946 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-21 01:08:56,946 [INFO]   Training Goalkeeper model...
+2026-02-21 01:08:57,300 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-21 01:08:57,303 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-21 01:08:57,303 [INFO]   Training Defender model...
+2026-02-21 01:08:58,321 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-21 01:08:58,323 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-21 01:08:58,324 [INFO]   Training Midfielder model...
+2026-02-21 01:08:59,843 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-21 01:08:59,846 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-21 01:08:59,846 [INFO]   Training Forward model...
+2026-02-21 01:09:00,367 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-21 01:09:00,370 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-21 01:09:00,633 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-21 01:09:00,639 [INFO] Team form built for 20 teams.
+2026-02-21 01:09:00,647 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-21 01:09:01,006 [INFO] Dynamic run thresholds: q33=2.84 q66=3.15 | Easy=186 Moderate=159 Tough=171
+2026-02-21 01:09:01,007 [INFO] avg_difficulty distribution: min=2.33 median=2.93 max=3.88
+2026-02-21 01:09:01,008 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=516)
+2026-02-21 01:09:54,624 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-21 01:09:54,736 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-21 01:09:54,736 [INFO]   Training Goalkeeper model...
+2026-02-21 01:09:55,098 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-21 01:09:55,101 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-21 01:09:55,101 [INFO]   Training Defender model...
+2026-02-21 01:09:56,116 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-21 01:09:56,119 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-21 01:09:56,120 [INFO]   Training Midfielder model...
+2026-02-21 01:09:57,639 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-21 01:09:57,642 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-21 01:09:57,642 [INFO]   Training Forward model...
+2026-02-21 01:09:58,143 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-21 01:09:58,146 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-21 01:09:58,419 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-21 01:09:58,424 [INFO] Team form built for 20 teams.
+2026-02-21 01:09:58,434 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-21 01:09:58,815 [INFO] Dynamic run thresholds: q33=2.84 q66=3.15 | Easy=186 Moderate=159 Tough=171
+2026-02-21 01:09:58,817 [INFO] avg_difficulty distribution: min=2.33 median=2.93 max=3.88
+2026-02-21 01:09:58,817 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=516)
+2026-02-21 01:15:24,119 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-21 01:15:24,215 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-21 01:15:24,216 [INFO]   Training Goalkeeper model...
+2026-02-21 01:15:24,573 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-21 01:15:24,577 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-21 01:15:24,577 [INFO]   Training Defender model...
+2026-02-21 01:15:25,568 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-21 01:15:25,571 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-21 01:15:25,571 [INFO]   Training Midfielder model...
+2026-02-21 01:15:27,180 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-21 01:15:27,183 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-21 01:15:27,184 [INFO]   Training Forward model...
+2026-02-21 01:15:27,699 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-21 01:15:27,702 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-21 01:15:27,962 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-21 01:15:27,969 [INFO] Team form built for 20 teams.
+2026-02-21 01:15:27,978 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-21 01:15:28,375 [INFO] Dynamic run thresholds: q33=2.84 q66=3.15 | Easy=186 Moderate=159 Tough=171
+2026-02-21 01:15:28,376 [INFO] avg_difficulty distribution: min=2.33 median=2.93 max=3.88
+2026-02-21 01:15:28,377 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=516)
+2026-02-21 01:22:41,226 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-21 01:22:41,352 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-21 01:22:41,352 [INFO]   Training Goalkeeper model...
+2026-02-21 01:22:41,728 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-21 01:22:41,730 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-21 01:22:41,730 [INFO]   Training Defender model...
+2026-02-21 01:22:42,907 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-21 01:22:42,910 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-21 01:22:42,910 [INFO]   Training Midfielder model...
+2026-02-21 01:22:44,503 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-21 01:22:44,505 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-21 01:22:44,506 [INFO]   Training Forward model...
+2026-02-21 01:22:45,064 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-21 01:22:45,066 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-21 01:22:45,351 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-21 01:22:45,357 [INFO] Team form built for 20 teams.
+2026-02-21 01:22:45,367 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-21 01:22:45,912 [INFO] Dynamic run thresholds: q33=2.84 q66=3.15 | Easy=186 Moderate=159 Tough=171
+2026-02-21 01:22:45,914 [INFO] avg_difficulty distribution: min=2.33 median=2.93 max=3.88
+2026-02-21 01:22:45,914 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=516)
+2026-02-21 01:27:46,515 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-21 01:27:46,620 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-21 01:27:46,621 [INFO]   Training Goalkeeper model...
+2026-02-21 01:27:46,976 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-21 01:27:46,979 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-21 01:27:46,979 [INFO]   Training Defender model...
+2026-02-21 01:27:47,973 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-21 01:27:47,975 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-21 01:27:47,976 [INFO]   Training Midfielder model...
+2026-02-21 01:27:49,475 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-21 01:27:49,478 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-21 01:27:49,478 [INFO]   Training Forward model...
+2026-02-21 01:27:49,996 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-21 01:27:49,998 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-21 01:27:50,321 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-21 01:27:50,326 [INFO] Team form built for 20 teams.
+2026-02-21 01:27:50,337 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-21 01:27:50,902 [INFO] Dynamic run thresholds: q33=2.84 q66=3.15 | Easy=186 Moderate=159 Tough=171
+2026-02-21 01:27:50,904 [INFO] avg_difficulty distribution: min=2.33 median=2.93 max=3.88
+2026-02-21 01:27:50,905 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=516)
+2026-02-21 01:28:22,844 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-21 01:28:22,947 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-21 01:28:22,947 [INFO]   Training Goalkeeper model...
+2026-02-21 01:28:23,310 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-21 01:28:23,313 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-21 01:28:23,314 [INFO]   Training Defender model...
+2026-02-21 01:28:24,326 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-21 01:28:24,329 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-21 01:28:24,329 [INFO]   Training Midfielder model...
+2026-02-21 01:28:25,847 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-21 01:28:25,850 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-21 01:28:25,851 [INFO]   Training Forward model...
+2026-02-21 01:28:26,422 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-21 01:28:26,423 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-21 01:28:26,754 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-21 01:28:26,761 [INFO] Team form built for 20 teams.
+2026-02-21 01:28:26,772 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-21 01:28:27,175 [INFO] Dynamic run thresholds: q33=2.84 q66=3.15 | Easy=186 Moderate=159 Tough=171
+2026-02-21 01:28:27,176 [INFO] avg_difficulty distribution: min=2.33 median=2.93 max=3.88
+2026-02-21 01:28:27,176 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=516)
+2026-02-21 01:47:10,197 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-21 01:47:10,322 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-21 01:47:10,322 [INFO]   Training Goalkeeper model...
+2026-02-21 01:47:10,787 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-21 01:47:10,789 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-21 01:47:10,789 [INFO]   Training Defender model...
+2026-02-21 01:47:11,885 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-21 01:47:11,888 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-21 01:47:11,888 [INFO]   Training Midfielder model...
+2026-02-21 01:47:13,604 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-21 01:47:13,608 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-21 01:47:13,608 [INFO]   Training Forward model...
+2026-02-21 01:47:14,128 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-21 01:47:14,130 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-21 01:47:14,438 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-21 01:47:14,445 [INFO] Team form built for 20 teams.
+2026-02-21 01:47:14,456 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-21 01:47:14,863 [INFO] Dynamic run thresholds: q33=2.84 q66=3.15 | Easy=186 Moderate=159 Tough=171
+2026-02-21 01:47:14,864 [INFO] avg_difficulty distribution: min=2.33 median=2.93 max=3.88
+2026-02-21 01:47:14,865 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=516)
+2026-02-21 02:09:06,839 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-21 02:09:06,956 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-21 02:09:06,956 [INFO]   Training Goalkeeper model...
+2026-02-21 02:09:07,387 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-21 02:09:07,389 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-21 02:09:07,390 [INFO]   Training Defender model...
+2026-02-21 02:09:08,678 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-21 02:09:08,681 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-21 02:09:08,681 [INFO]   Training Midfielder model...
+2026-02-21 02:09:10,584 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-21 02:09:10,587 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-21 02:09:10,588 [INFO]   Training Forward model...
+2026-02-21 02:09:11,189 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-21 02:09:11,191 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-21 02:09:11,681 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-21 02:09:11,686 [INFO] Team form built for 20 teams.
+2026-02-21 02:09:11,698 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-21 02:09:12,202 [INFO] Dynamic run thresholds: q33=2.84 q66=3.15 | Easy=186 Moderate=159 Tough=171
+2026-02-21 02:09:12,204 [INFO] avg_difficulty distribution: min=2.33 median=2.93 max=3.88
+2026-02-21 02:09:12,205 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=516)
+2026-02-21 03:48:46,662 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-21 03:48:48,050 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-21 03:48:48,050 [INFO]   Training Goalkeeper model...
+2026-02-21 03:48:49,351 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-21 03:48:49,354 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-21 03:48:49,354 [INFO]   Training Defender model...
+2026-02-21 03:48:50,372 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-21 03:48:50,375 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-21 03:48:50,375 [INFO]   Training Midfielder model...
+2026-02-21 03:48:51,927 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-21 03:48:51,931 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-21 03:48:51,931 [INFO]   Training Forward model...
+2026-02-21 03:48:52,471 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-21 03:48:52,473 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-21 03:48:52,976 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-21 03:48:52,982 [INFO] Team form built for 20 teams.
+2026-02-21 03:48:52,994 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-21 03:48:53,431 [INFO] Dynamic run thresholds: q33=2.84 q66=3.15 | Easy=186 Moderate=159 Tough=171
+2026-02-21 03:48:53,432 [INFO] avg_difficulty distribution: min=2.33 median=2.93 max=3.88
+2026-02-21 03:48:53,433 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=516)
+2026-02-21 12:02:20,897 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-21 12:02:21,127 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-21 12:02:21,127 [INFO]   Training Goalkeeper model...
+2026-02-21 12:02:21,609 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-21 12:02:21,613 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-21 12:02:21,613 [INFO]   Training Defender model...
+2026-02-21 12:02:22,633 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-21 12:02:22,636 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-21 12:02:22,636 [INFO]   Training Midfielder model...
+2026-02-21 12:02:24,148 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-21 12:02:24,187 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-21 12:02:24,187 [INFO]   Training Forward model...
+2026-02-21 12:02:24,698 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-21 12:02:24,701 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-21 12:02:25,063 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-21 12:02:25,069 [INFO] Team form built for 20 teams.
+2026-02-21 12:02:25,079 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-21 12:02:25,508 [INFO] Dynamic run thresholds: q33=2.90 q66=3.25 | Easy=182 Moderate=162 Tough=171
+2026-02-21 12:02:25,509 [INFO] avg_difficulty distribution: min=2.35 median=2.98 max=3.61
+2026-02-21 12:02:25,510 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=515)
+2026-02-21 12:18:54,425 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-21 12:18:54,534 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-21 12:18:54,535 [INFO]   Training Goalkeeper model...
+2026-02-21 12:18:54,925 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-21 12:18:54,927 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-21 12:18:54,928 [INFO]   Training Defender model...
+2026-02-21 12:18:55,940 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-21 12:18:55,942 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-21 12:18:55,942 [INFO]   Training Midfielder model...
+2026-02-21 12:18:57,516 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-21 12:18:57,520 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-21 12:18:57,520 [INFO]   Training Forward model...
+2026-02-21 12:18:58,063 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-21 12:18:58,066 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-21 12:18:58,356 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-21 12:18:58,361 [INFO] Team form built for 20 teams.
+2026-02-21 12:18:58,370 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-21 12:18:58,733 [INFO] Dynamic run thresholds: q33=2.90 q66=3.25 | Easy=182 Moderate=162 Tough=171
+2026-02-21 12:18:58,735 [INFO] avg_difficulty distribution: min=2.35 median=2.98 max=3.61
+2026-02-21 12:18:58,735 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=515)
+2026-02-21 12:24:15,457 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-21 12:24:15,559 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-21 12:24:15,559 [INFO]   Training Goalkeeper model...
+2026-02-21 12:24:15,919 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-21 12:24:15,922 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-21 12:24:15,922 [INFO]   Training Defender model...
+2026-02-21 12:24:16,957 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-21 12:24:16,959 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-21 12:24:16,959 [INFO]   Training Midfielder model...
+2026-02-21 12:24:18,475 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-21 12:24:18,477 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-21 12:24:18,478 [INFO]   Training Forward model...
+2026-02-21 12:24:18,976 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-21 12:24:18,978 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-21 12:24:19,267 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-21 12:24:19,272 [INFO] Team form built for 20 teams.
+2026-02-21 12:24:19,280 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-21 12:24:19,662 [INFO] Dynamic run thresholds: q33=2.90 q66=3.25 | Easy=182 Moderate=162 Tough=171
+2026-02-21 12:24:19,663 [INFO] avg_difficulty distribution: min=2.35 median=2.98 max=3.61
+2026-02-21 12:24:19,664 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=515)
+2026-02-21 12:27:44,463 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-21 12:27:44,569 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-21 12:27:44,569 [INFO]   Training Goalkeeper model...
+2026-02-21 12:27:44,925 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-21 12:27:44,929 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-21 12:27:44,929 [INFO]   Training Defender model...
+2026-02-21 12:27:45,940 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-21 12:27:45,943 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-21 12:27:45,943 [INFO]   Training Midfielder model...
+2026-02-21 12:27:47,453 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-21 12:27:47,455 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-21 12:27:47,455 [INFO]   Training Forward model...
+2026-02-21 12:27:47,957 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-21 12:27:47,960 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-21 12:27:48,241 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-21 12:27:48,248 [INFO] Team form built for 20 teams.
+2026-02-21 12:27:48,259 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-21 12:27:48,830 [INFO] Dynamic run thresholds: q33=2.90 q66=3.25 | Easy=184 Moderate=165 Tough=173
+2026-02-21 12:27:48,831 [INFO] avg_difficulty distribution: min=2.35 median=2.98 max=3.61
+2026-02-21 12:27:48,832 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=522)
+2026-02-21 12:31:41,425 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-21 12:31:41,523 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-21 12:31:41,523 [INFO]   Training Goalkeeper model...
+2026-02-21 12:31:41,902 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-21 12:31:41,905 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-21 12:31:41,905 [INFO]   Training Defender model...
+2026-02-21 12:31:42,958 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-21 12:31:42,961 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-21 12:31:42,961 [INFO]   Training Midfielder model...
+2026-02-21 12:31:44,511 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-21 12:31:44,514 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-21 12:31:44,514 [INFO]   Training Forward model...
+2026-02-21 12:31:45,027 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-21 12:31:45,030 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-21 12:31:45,299 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-21 12:31:45,305 [INFO] Team form built for 20 teams.
+2026-02-21 12:31:45,313 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-21 12:31:45,713 [INFO] Dynamic run thresholds: q33=2.90 q66=3.25 | Easy=182 Moderate=162 Tough=171
+2026-02-21 12:31:45,715 [INFO] avg_difficulty distribution: min=2.35 median=2.98 max=3.61
+2026-02-21 12:31:45,716 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=515)
+2026-02-21 12:33:18,205 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-21 12:33:18,304 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-21 12:33:18,304 [INFO]   Training Goalkeeper model...
+2026-02-21 12:33:18,658 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-21 12:33:18,660 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-21 12:33:18,661 [INFO]   Training Defender model...
+2026-02-21 12:33:19,648 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-21 12:33:19,650 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-21 12:33:19,651 [INFO]   Training Midfielder model...
+2026-02-21 12:33:21,133 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-21 12:33:21,135 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-21 12:33:21,135 [INFO]   Training Forward model...
+2026-02-21 12:33:21,619 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-21 12:33:21,622 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-21 12:33:21,890 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-21 12:33:21,895 [INFO] Team form built for 20 teams.
+2026-02-21 12:33:21,904 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-21 12:33:22,257 [INFO] Dynamic run thresholds: q33=2.90 q66=3.25 | Easy=182 Moderate=162 Tough=171
+2026-02-21 12:33:22,258 [INFO] avg_difficulty distribution: min=2.35 median=2.98 max=3.61
+2026-02-21 12:33:22,259 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=515)
+2026-02-21 12:42:06,723 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-21 12:42:06,821 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-21 12:42:06,821 [INFO]   Training Goalkeeper model...
+2026-02-21 12:42:07,181 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-21 12:42:07,184 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-21 12:42:07,184 [INFO]   Training Defender model...
+2026-02-21 12:42:08,182 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-21 12:42:08,184 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-21 12:42:08,185 [INFO]   Training Midfielder model...
+2026-02-21 12:42:09,715 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-21 12:42:09,718 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-21 12:42:09,718 [INFO]   Training Forward model...
+2026-02-21 12:42:10,221 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-21 12:42:10,224 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-21 12:42:10,503 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-21 12:42:10,508 [INFO] Team form built for 20 teams.
+2026-02-21 12:42:10,524 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-21 12:42:10,898 [INFO] Dynamic run thresholds: q33=2.90 q66=3.25 | Easy=182 Moderate=162 Tough=171
+2026-02-21 12:42:10,899 [INFO] avg_difficulty distribution: min=2.35 median=2.98 max=3.61
+2026-02-21 12:42:10,900 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=515)
+2026-02-21 13:50:49,065 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-21 13:50:49,162 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-21 13:50:49,163 [INFO]   Training Goalkeeper model...
+2026-02-21 13:50:49,530 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-21 13:50:49,532 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-21 13:50:49,533 [INFO]   Training Defender model...
+2026-02-21 13:50:50,559 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-21 13:50:50,561 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-21 13:50:50,561 [INFO]   Training Midfielder model...
+2026-02-21 13:50:52,077 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-21 13:50:52,083 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-21 13:50:52,084 [INFO]   Training Forward model...
+2026-02-21 13:50:52,593 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-21 13:50:52,596 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-21 13:50:52,877 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-21 13:50:52,883 [INFO] Team form built for 20 teams.
+2026-02-21 13:50:52,891 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-21 13:50:53,258 [INFO] Dynamic run thresholds: q33=2.90 q66=3.25 | Easy=182 Moderate=163 Tough=171
+2026-02-21 13:50:53,260 [INFO] avg_difficulty distribution: min=2.35 median=2.98 max=3.61
+2026-02-21 13:50:53,260 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=516)
+2026-02-21 13:57:22,206 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-21 13:57:22,306 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-21 13:57:22,307 [INFO]   Training Goalkeeper model...
+2026-02-21 13:57:22,660 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-21 13:57:22,663 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-21 13:57:22,663 [INFO]   Training Defender model...
+2026-02-21 13:57:23,744 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-21 13:57:23,747 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-21 13:57:23,747 [INFO]   Training Midfielder model...
+2026-02-21 13:57:25,283 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-21 13:57:25,286 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-21 13:57:25,287 [INFO]   Training Forward model...
+2026-02-21 13:57:25,837 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-21 13:57:25,839 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-21 13:57:26,183 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-21 13:57:26,190 [INFO] Team form built for 20 teams.
+2026-02-21 13:57:26,198 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-21 13:57:26,573 [INFO] Dynamic run thresholds: q33=2.90 q66=3.25 | Easy=182 Moderate=163 Tough=171
+2026-02-21 13:57:26,575 [INFO] avg_difficulty distribution: min=2.35 median=2.98 max=3.61
+2026-02-21 13:57:26,575 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=516)
+2026-02-22 00:19:17,181 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-22 00:19:17,476 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-22 00:19:17,477 [INFO]   Training Goalkeeper model...
+2026-02-22 00:19:17,903 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-22 00:19:17,907 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-22 00:19:17,907 [INFO]   Training Defender model...
+2026-02-22 00:19:18,888 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-22 00:19:18,891 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-22 00:19:18,891 [INFO]   Training Midfielder model...
+2026-02-22 00:19:20,384 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-22 00:19:20,388 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-22 00:19:20,388 [INFO]   Training Forward model...
+2026-02-22 00:19:20,879 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-22 00:19:20,882 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-22 00:19:21,163 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-22 00:19:21,169 [INFO] Team form built for 20 teams.
+2026-02-22 00:19:21,177 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-22 00:19:21,926 [INFO] Dynamic run thresholds: q33=2.90 q66=3.25 | Easy=182 Moderate=164 Tough=171
+2026-02-22 00:19:21,928 [INFO] avg_difficulty distribution: min=2.35 median=2.98 max=3.61
+2026-02-22 00:19:21,929 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=517)
+2026-02-22 01:18:01,854 [INFO] 📦 Loading player history from cache (player_history_cache.csv)...
+2026-02-22 01:18:01,979 [INFO] ✅ Cache loaded — 19886 rows, 817 players.
+2026-02-22 01:18:01,979 [INFO]   Training Goalkeeper model...
+2026-02-22 01:18:02,359 [INFO]   Goalkeeper: RMSE=0.261  R²=0.981  (train=1005, test=101)
+2026-02-22 01:18:02,363 [INFO]   Top features: {'roll3_pts': np.float64(0.341), 'roll3_influence': np.float64(0.201), 'price': np.float64(0.071), 'roll5_pts': np.float64(0.054), 'gw_number': np.float64(0.053)}
+2026-02-22 01:18:02,364 [INFO]   Training Defender model...
+2026-02-22 01:18:03,367 [INFO]   Defender: RMSE=1.337  R²=0.716  (train=2885, test=293)
+2026-02-22 01:18:03,370 [INFO]   Top features: {'roll3_mins': np.float64(0.33), 'roll3_influence': np.float64(0.173), 'pts_per_90': np.float64(0.071), 'price': np.float64(0.068), 'roll5_pts': np.float64(0.065)}
+2026-02-22 01:18:03,370 [INFO]   Training Midfielder model...
+2026-02-22 01:18:04,896 [INFO]   Midfielder: RMSE=1.014  R²=0.769  (train=3941, test=401)
+2026-02-22 01:18:04,899 [INFO]   Top features: {'roll3_mins': np.float64(0.247), 'roll3_influence': np.float64(0.218), 'roll3_creativity': np.float64(0.12), 'roll3_threat': np.float64(0.072), 'price': np.float64(0.065)}
+2026-02-22 01:18:04,899 [INFO]   Training Forward model...
+2026-02-22 01:18:05,402 [INFO]   Forward: RMSE=0.568  R²=0.933  (train=965, test=101)
+2026-02-22 01:18:05,405 [INFO]   Top features: {'roll3_mins': np.float64(0.22), 'roll3_creativity': np.float64(0.172), 'pts_per_90': np.float64(0.081), 'price': np.float64(0.076), 'roll3_threat': np.float64(0.066)}
+2026-02-22 01:18:05,723 [INFO] Custom difficulty built for 20 teams (min 1.00, median 3.24, max 5.00).
+2026-02-22 01:18:05,728 [INFO] Team form built for 20 teams.
+2026-02-22 01:18:05,738 [INFO] Opponent scoring map built — 14701 player/opponent pairs.
+2026-02-22 01:18:06,257 [INFO] Dynamic run thresholds: q33=2.90 q66=3.25 | Easy=182 Moderate=164 Tough=171
+2026-02-22 01:18:06,259 [INFO] avg_difficulty distribution: min=2.35 median=2.98 max=3.61
+2026-02-22 01:18:06,259 [INFO] fixture_run_label counts: Easy=0 Moderate=0 Tough=0 (n=517)
+2026-02-22 17:44:26,990 [INFO] ♻️  Cache missing v5 columns ['ewm3_pts', 'ewm5_pts', 'selected_pct'] — refreshing...
+2026-02-22 17:44:26,996 [INFO] Fetching history for 818 players...
+2026-02-22 17:44:26,997 [INFO]   0/818
+2026-02-22 17:44:51,878 [INFO]   50/818
+2026-02-22 17:45:17,000 [INFO]   100/818
+2026-02-22 17:45:42,511 [INFO]   150/818
+2026-02-22 17:46:07,056 [INFO]   200/818
+2026-02-22 17:46:31,800 [INFO]   250/818
+2026-02-22 17:46:55,696 [INFO]   300/818
+2026-02-22 17:47:19,532 [INFO]   350/818
+2026-02-22 17:47:43,671 [INFO]   400/818
+2026-02-22 17:48:08,893 [INFO]   450/818
+2026-02-22 17:48:32,696 [INFO]   500/818
+2026-02-22 17:48:57,889 [INFO]   550/818
+2026-02-22 17:49:23,815 [INFO]   600/818
+2026-02-22 17:49:49,365 [INFO]   650/818
+2026-02-22 17:50:13,669 [INFO]   700/818
+2026-02-22 17:50:38,137 [INFO]   750/818
+2026-02-22 17:51:02,827 [INFO]   800/818
+2026-02-22 17:51:11,642 [INFO] Done. 818 players processed.
+2026-02-22 17:51:13,117 [INFO] 💾 Cached → player_history_cache.csv
+2026-02-22 17:51:13,120 [INFO]   Training Goalkeeper model...
+2026-02-22 17:51:14,417 [INFO]   Goalkeeper: RMSE=0.310  R²=0.984  CV-RMSE=1.674  CV-R²=0.242  (train=1011, test=94)
+2026-02-22 17:51:14,563 [INFO]   SHAP top features (Goalkeeper): {'ewm3_mins': 0.712, 'ewm3_pts': 0.4363, 'price': 0.1105, 'gw_number': 0.1054, 'roll3_saves': 0.1015}
+2026-02-22 17:51:15,279 [INFO]   SHAP chart saved → shap_Goalkeeper.png
+2026-02-22 17:51:15,280 [INFO]   Training Defender model...
+2026-02-22 17:51:16,254 [INFO]   Defender: RMSE=1.065  R²=0.796  CV-RMSE=2.029  CV-R²=0.225  (train=2899, test=265)
+2026-02-22 17:51:16,335 [INFO]   SHAP top features (Defender): {'ewm3_mins': 0.7462, 'ewm3_pts': 0.2671, 'roll3_mins': 0.2614, 'roll5_pts': 0.1741, 'price': 0.1715}
+2026-02-22 17:51:16,452 [INFO]   SHAP chart saved → shap_Defender.png
+2026-02-22 17:51:16,453 [INFO]   Training Midfielder model...
+2026-02-22 17:51:17,594 [INFO]   Midfielder: RMSE=1.099  R²=0.704  CV-RMSE=1.893  CV-R²=0.296  (train=3970, test=367)
+2026-02-22 17:51:17,698 [INFO]   SHAP top features (Midfielder): {'ewm3_mins': 0.7537, 'ewm3_creativity': 0.1913, 'ewm3_pts': 0.1708, 'ewm5_pts': 0.1374, 'roll3_mins': 0.137}
+2026-02-22 17:51:17,817 [INFO]   SHAP chart saved → shap_Midfielder.png
+2026-02-22 17:51:17,818 [INFO]   Training Forward model...
+2026-02-22 17:51:18,835 [INFO]   Forward: RMSE=0.494  R²=0.961  CV-RMSE=2.146  CV-R²=0.238  (train=974, test=92)
+2026-02-22 17:51:18,904 [INFO]   SHAP top features (Forward): {'ewm3_mins': 0.5156, 'ewm3_pts': 0.4302, 'ewm3_creativity': 0.1966, 'roll3_creativity': 0.1593, 'roll5_pts': 0.1283}
+2026-02-22 17:51:19,016 [INFO]   SHAP chart saved → shap_Forward.png
+2026-02-22 17:51:19,018 [INFO] 📊 Model metrics saved → model_metrics.json
+2026-02-22 17:52:57,690 [INFO] ✅ Cache is current (GW27) — 20704 rows, 818 players.
+2026-02-22 17:52:57,691 [INFO]   Training Goalkeeper model...
+2026-02-22 17:52:58,334 [INFO]   Goalkeeper: RMSE=0.310  R²=0.984  CV-RMSE=1.674  CV-R²=0.242  (train=1011, test=94)
+2026-02-22 17:52:58,402 [INFO]   SHAP top features (Goalkeeper): {'ewm3_mins': 0.712, 'ewm3_pts': 0.4363, 'price': 0.1105, 'gw_number': 0.1054, 'roll3_saves': 0.1015}
+2026-02-22 17:52:58,512 [INFO]   SHAP chart saved → shap_Goalkeeper.png
+2026-02-22 17:52:58,513 [INFO]   Training Defender model...
+2026-02-22 17:52:59,398 [INFO]   Defender: RMSE=1.065  R²=0.796  CV-RMSE=2.029  CV-R²=0.225  (train=2899, test=265)
+2026-02-22 17:52:59,477 [INFO]   SHAP top features (Defender): {'ewm3_mins': 0.7462, 'ewm3_pts': 0.2671, 'roll3_mins': 0.2614, 'roll5_pts': 0.1741, 'price': 0.1715}
+2026-02-22 17:52:59,587 [INFO]   SHAP chart saved → shap_Defender.png
+2026-02-22 17:52:59,587 [INFO]   Training Midfielder model...
+2026-02-22 17:53:00,641 [INFO]   Midfielder: RMSE=1.099  R²=0.704  CV-RMSE=1.893  CV-R²=0.296  (train=3970, test=367)
+2026-02-22 17:53:00,729 [INFO]   SHAP top features (Midfielder): {'ewm3_mins': 0.7537, 'ewm3_creativity': 0.1913, 'ewm3_pts': 0.1708, 'ewm5_pts': 0.1374, 'roll3_mins': 0.137}
+2026-02-22 17:53:00,839 [INFO]   SHAP chart saved → shap_Midfielder.png
+2026-02-22 17:53:00,839 [INFO]   Training Forward model...
+2026-02-22 17:53:01,786 [INFO]   Forward: RMSE=0.494  R²=0.961  CV-RMSE=2.146  CV-R²=0.238  (train=974, test=92)
+2026-02-22 17:53:01,854 [INFO]   SHAP top features (Forward): {'ewm3_mins': 0.5156, 'ewm3_pts': 0.4302, 'ewm3_creativity': 0.1966, 'roll3_creativity': 0.1593, 'roll5_pts': 0.1283}
+2026-02-22 17:53:01,969 [INFO]   SHAP chart saved → shap_Forward.png
+2026-02-22 17:53:01,970 [INFO] 📊 Model metrics saved → model_metrics.json
+2026-02-22 17:53:02,706 [INFO] Custom difficulty v5 (EWMA+venue-split) for 20 teams — home avg=3.32  away avg=2.99
+2026-02-22 17:53:02,717 [INFO] Team form (match-result): 20 teams, avg=0.317, min=0.056, max=0.556
+2026-02-22 17:53:02,734 [INFO] Opponent scoring map: 14765 pairs.
+2026-02-22 17:53:03,318 [INFO] Run labels: q33=2.95 q66=3.11 | Easy=183 Moderate=180 Tough=155
+2026-02-22 17:53:03,319 [INFO] avg_difficulty: min=2.55 median=3.08 max=3.73
+2026-02-22 17:53:03,320 [INFO] labels: Easy=183 Moderate=180 Tough=155 (n=518)
+2026-02-22 17:56:33,933 [INFO] ✅ Cache is current (GW27) — 20704 rows, 818 players.
+2026-02-22 17:56:33,933 [INFO]   Training Goalkeeper model...
+2026-02-22 17:56:34,563 [INFO]   Goalkeeper: RMSE=0.310  R²=0.984  CV-RMSE=1.674  CV-R²=0.242  (train=1011, test=94)
+2026-02-22 17:56:34,624 [INFO]   SHAP top features (Goalkeeper): {'ewm3_mins': 0.712, 'ewm3_pts': 0.4363, 'price': 0.1105, 'gw_number': 0.1054, 'roll3_saves': 0.1015}
+2026-02-22 17:56:34,739 [INFO]   SHAP chart saved → shap_Goalkeeper.png
+2026-02-22 17:56:34,740 [INFO]   Training Defender model...
+2026-02-22 17:56:35,571 [INFO]   Defender: RMSE=1.065  R²=0.796  CV-RMSE=2.029  CV-R²=0.225  (train=2899, test=265)
+2026-02-22 17:56:35,659 [INFO]   SHAP top features (Defender): {'ewm3_mins': 0.7462, 'ewm3_pts': 0.2671, 'roll3_mins': 0.2614, 'roll5_pts': 0.1741, 'price': 0.1715}
+2026-02-22 17:56:35,777 [INFO]   SHAP chart saved → shap_Defender.png
+2026-02-22 17:56:35,777 [INFO]   Training Midfielder model...
+2026-02-22 17:56:36,856 [INFO]   Midfielder: RMSE=1.099  R²=0.704  CV-RMSE=1.893  CV-R²=0.296  (train=3970, test=367)
+2026-02-22 17:56:36,950 [INFO]   SHAP top features (Midfielder): {'ewm3_mins': 0.7537, 'ewm3_creativity': 0.1913, 'ewm3_pts': 0.1708, 'ewm5_pts': 0.1374, 'roll3_mins': 0.137}
+2026-02-22 17:56:37,064 [INFO]   SHAP chart saved → shap_Midfielder.png
+2026-02-22 17:56:37,064 [INFO]   Training Forward model...
+2026-02-22 17:56:37,925 [INFO]   Forward: RMSE=0.494  R²=0.961  CV-RMSE=2.146  CV-R²=0.238  (train=974, test=92)
+2026-02-22 17:56:37,990 [INFO]   SHAP top features (Forward): {'ewm3_mins': 0.5156, 'ewm3_pts': 0.4302, 'ewm3_creativity': 0.1966, 'roll3_creativity': 0.1593, 'roll5_pts': 0.1283}
+2026-02-22 17:56:38,100 [INFO]   SHAP chart saved → shap_Forward.png
+2026-02-22 17:56:38,101 [INFO] 📊 Model metrics saved → model_metrics.json
+2026-02-22 17:56:38,628 [INFO] Custom difficulty v5 (EWMA+venue-split) for 20 teams — home avg=3.32  away avg=2.99
+2026-02-22 17:56:38,638 [INFO] Team form (match-result): 20 teams, avg=0.317, min=0.056, max=0.556
+2026-02-22 17:56:38,649 [INFO] Opponent scoring map: 14765 pairs.
+2026-02-22 17:56:39,035 [INFO] Run labels: q33=2.95 q66=3.11 | Easy=183 Moderate=180 Tough=155
+2026-02-22 17:56:39,037 [INFO] avg_difficulty: min=2.55 median=3.08 max=3.73
+2026-02-22 17:56:39,037 [INFO] labels: Easy=183 Moderate=180 Tough=155 (n=518)
+2026-02-22 18:04:49,849 [INFO] ✅ Cache is current (GW27) — 20704 rows, 818 players.
+2026-02-22 18:04:49,850 [INFO]   Training Goalkeeper model...
+2026-02-22 18:04:50,550 [INFO]   Goalkeeper: RMSE=0.310  R²=0.984  CV-RMSE=1.674  CV-R²=0.242  (train=1011, test=94)
+2026-02-22 18:04:50,621 [INFO]   SHAP top features (Goalkeeper): {'ewm3_mins': 0.712, 'ewm3_pts': 0.4363, 'price': 0.1105, 'gw_number': 0.1054, 'roll3_saves': 0.1015}
+2026-02-22 18:04:50,742 [INFO]   SHAP chart saved → shap_Goalkeeper.png
+2026-02-22 18:04:50,743 [INFO]   Training Defender model...
+2026-02-22 18:04:51,712 [INFO]   Defender: RMSE=1.065  R²=0.796  CV-RMSE=2.029  CV-R²=0.225  (train=2899, test=265)
+2026-02-22 18:04:51,789 [INFO]   SHAP top features (Defender): {'ewm3_mins': 0.7462, 'ewm3_pts': 0.2671, 'roll3_mins': 0.2614, 'roll5_pts': 0.1741, 'price': 0.1715}
+2026-02-22 18:04:51,902 [INFO]   SHAP chart saved → shap_Defender.png
+2026-02-22 18:04:51,903 [INFO]   Training Midfielder model...
+2026-02-22 18:04:52,985 [INFO]   Midfielder: RMSE=1.099  R²=0.704  CV-RMSE=1.893  CV-R²=0.296  (train=3970, test=367)
+2026-02-22 18:04:53,072 [INFO]   SHAP top features (Midfielder): {'ewm3_mins': 0.7537, 'ewm3_creativity': 0.1913, 'ewm3_pts': 0.1708, 'ewm5_pts': 0.1374, 'roll3_mins': 0.137}
+2026-02-22 18:04:53,187 [INFO]   SHAP chart saved → shap_Midfielder.png
+2026-02-22 18:04:53,188 [INFO]   Training Forward model...
+2026-02-22 18:04:54,122 [INFO]   Forward: RMSE=0.494  R²=0.961  CV-RMSE=2.146  CV-R²=0.238  (train=974, test=92)
+2026-02-22 18:04:54,190 [INFO]   SHAP top features (Forward): {'ewm3_mins': 0.5156, 'ewm3_pts': 0.4302, 'ewm3_creativity': 0.1966, 'roll3_creativity': 0.1593, 'roll5_pts': 0.1283}
+2026-02-22 18:04:54,300 [INFO]   SHAP chart saved → shap_Forward.png
+2026-02-22 18:04:54,302 [INFO] 📊 Model metrics saved → model_metrics.json
+2026-02-22 18:04:54,840 [INFO] Custom difficulty v5 (EWMA+venue-split) for 20 teams — home avg=3.32  away avg=2.99
+2026-02-22 18:04:54,855 [INFO] Team form (match-result): 20 teams, avg=0.317, min=0.056, max=0.556
+2026-02-22 18:04:54,866 [INFO] Opponent scoring map: 14765 pairs.
+2026-02-22 18:04:55,402 [INFO] Run labels: q33=2.95 q66=3.11 | Easy=184 Moderate=181 Tough=154
+2026-02-22 18:04:55,404 [INFO] avg_difficulty: min=2.55 median=3.08 max=3.73
+2026-02-22 18:04:55,405 [INFO] labels: Easy=184 Moderate=181 Tough=154 (n=519)
+2026-02-22 18:21:26,239 [INFO] ✅ Cache is current (GW27) — 20704 rows, 818 players.
+2026-02-22 18:21:26,239 [INFO]   Training Goalkeeper model...
+2026-02-22 18:21:26,896 [INFO]   Goalkeeper: RMSE=0.310  R²=0.984  CV-RMSE=1.674  CV-R²=0.242  (train=1011, test=94)
+2026-02-22 18:21:26,966 [INFO]   SHAP top features (Goalkeeper): {'ewm3_mins': 0.712, 'ewm3_pts': 0.4363, 'price': 0.1105, 'gw_number': 0.1054, 'roll3_saves': 0.1015}
+2026-02-22 18:21:27,413 [INFO]   SHAP chart saved → shap_Goalkeeper.png
+2026-02-22 18:21:27,413 [INFO]   Training Defender model...
+2026-02-22 18:21:28,339 [INFO]   Defender: RMSE=1.065  R²=0.796  CV-RMSE=2.029  CV-R²=0.225  (train=2899, test=265)
+2026-02-22 18:21:28,422 [INFO]   SHAP top features (Defender): {'ewm3_mins': 0.7462, 'ewm3_pts': 0.2671, 'roll3_mins': 0.2614, 'roll5_pts': 0.1741, 'price': 0.1715}
+2026-02-22 18:21:28,534 [INFO]   SHAP chart saved → shap_Defender.png
+2026-02-22 18:21:28,535 [INFO]   Training Midfielder model...
+2026-02-22 18:21:29,578 [INFO]   Midfielder: RMSE=1.099  R²=0.704  CV-RMSE=1.893  CV-R²=0.296  (train=3970, test=367)
+2026-02-22 18:21:29,673 [INFO]   SHAP top features (Midfielder): {'ewm3_mins': 0.7537, 'ewm3_creativity': 0.1913, 'ewm3_pts': 0.1708, 'ewm5_pts': 0.1374, 'roll3_mins': 0.137}
+2026-02-22 18:21:29,786 [INFO]   SHAP chart saved → shap_Midfielder.png
+2026-02-22 18:21:29,786 [INFO]   Training Forward model...
+2026-02-22 18:21:30,682 [INFO]   Forward: RMSE=0.494  R²=0.961  CV-RMSE=2.146  CV-R²=0.238  (train=974, test=92)
+2026-02-22 18:21:30,751 [INFO]   SHAP top features (Forward): {'ewm3_mins': 0.5156, 'ewm3_pts': 0.4302, 'ewm3_creativity': 0.1966, 'roll3_creativity': 0.1593, 'roll5_pts': 0.1283}
+2026-02-22 18:21:30,858 [INFO]   SHAP chart saved → shap_Forward.png
+2026-02-22 18:21:30,860 [INFO] 📊 Model metrics saved → model_metrics.json
+2026-02-22 18:21:31,196 [INFO] 🧩 Training multi-output component models...
+2026-02-22 18:21:31,234 [INFO]   Component [Goalkeeper | goals_scored   ]: RMSE=0.000  best_iter=0
+2026-02-22 18:21:31,311 [INFO]   Component [Goalkeeper | assists        ]: RMSE=0.000  best_iter=74
+2026-02-22 18:21:31,448 [INFO]   Component [Goalkeeper | clean_sheets   ]: RMSE=0.101  best_iter=195
+2026-02-22 18:21:31,657 [INFO]   Component [Goalkeeper | bonus          ]: RMSE=0.181  best_iter=199
+2026-02-22 18:21:31,832 [INFO]   Component [Defender   | goals_scored   ]: RMSE=0.059  best_iter=199
+2026-02-22 18:21:32,049 [INFO]   Component [Defender   | assists        ]: RMSE=0.121  best_iter=199
+2026-02-22 18:21:32,221 [INFO]   Component [Defender   | clean_sheets   ]: RMSE=0.195  best_iter=199
+2026-02-22 18:21:32,390 [INFO]   Component [Defender   | bonus          ]: RMSE=0.171  best_iter=197
+2026-02-22 18:21:32,495 [INFO]   Component [Midfielder | goals_scored   ]: RMSE=0.161  best_iter=39
+2026-02-22 18:21:32,695 [INFO]   Component [Midfielder | assists        ]: RMSE=0.130  best_iter=199
+2026-02-22 18:21:32,894 [INFO]   Component [Midfielder | clean_sheets   ]: RMSE=0.213  best_iter=199
+2026-02-22 18:21:33,092 [INFO]   Component [Midfielder | bonus          ]: RMSE=0.302  best_iter=199
+2026-02-22 18:21:33,249 [INFO]   Component [Forward    | goals_scored   ]: RMSE=0.167  best_iter=199
+2026-02-22 18:21:33,410 [INFO]   Component [Forward    | assists        ]: RMSE=0.031  best_iter=191
+2026-02-22 18:21:33,568 [INFO]   Component [Forward    | clean_sheets   ]: RMSE=0.136  best_iter=199
+2026-02-22 18:21:33,727 [INFO]   Component [Forward    | bonus          ]: RMSE=0.323  best_iter=199
+2026-02-22 18:21:33,756 [INFO] 💰 Training price rise/fall prediction model...
+2026-02-22 18:21:33,996 [INFO]   Price model: RMSE=0.1737  R²=0.097  (train=17598, test=3106)
+2026-02-22 18:21:34,214 [INFO] Custom difficulty v5 (EWMA+venue-split) for 20 teams — home avg=3.32  away avg=2.99
+2026-02-22 18:21:34,225 [INFO] Team form (match-result): 20 teams, avg=0.317, min=0.056, max=0.556
+2026-02-22 18:21:34,235 [INFO] Opponent scoring map: 14765 pairs.
+2026-02-22 18:21:34,246 [INFO] CS probability map: 6460 player/opponent pairs.
+2026-02-22 18:21:34,941 [INFO] Run labels: q33=2.95 q66=3.11 | Easy=184 Moderate=181 Tough=154
+2026-02-22 18:21:34,942 [INFO] avg_difficulty: min=2.55 median=3.08 max=3.73
+2026-02-22 18:21:34,943 [INFO] labels: Easy=184 Moderate=181 Tough=154 (n=519)
+2026-02-22 18:25:44,568 [INFO] ✅ Cache is current (GW27) — 20704 rows, 818 players.
+2026-02-22 18:25:44,568 [INFO]   Training Goalkeeper model...
+2026-02-22 18:25:45,252 [INFO]   Goalkeeper: RMSE=0.310  R²=0.984  CV-RMSE=1.674  CV-R²=0.242  (train=1011, test=94)
+2026-02-22 18:25:45,320 [INFO]   SHAP top features (Goalkeeper): {'ewm3_mins': 0.712, 'ewm3_pts': 0.4363, 'price': 0.1105, 'gw_number': 0.1054, 'roll3_saves': 0.1015}
+2026-02-22 18:25:45,441 [INFO]   SHAP chart saved → shap_Goalkeeper.png
+2026-02-22 18:25:45,441 [INFO]   Training Defender model...
+2026-02-22 18:25:47,628 [INFO]   Defender: RMSE=1.065  R²=0.796  CV-RMSE=2.029  CV-R²=0.225  (train=2899, test=265)
+2026-02-22 18:25:47,713 [INFO]   SHAP top features (Defender): {'ewm3_mins': 0.7462, 'ewm3_pts': 0.2671, 'roll3_mins': 0.2614, 'roll5_pts': 0.1741, 'price': 0.1715}
+2026-02-22 18:25:47,828 [INFO]   SHAP chart saved → shap_Defender.png
+2026-02-22 18:25:47,829 [INFO]   Training Midfielder model...
+2026-02-22 18:25:49,007 [INFO]   Midfielder: RMSE=1.099  R²=0.704  CV-RMSE=1.893  CV-R²=0.296  (train=3970, test=367)
+2026-02-22 18:25:49,096 [INFO]   SHAP top features (Midfielder): {'ewm3_mins': 0.7537, 'ewm3_creativity': 0.1913, 'ewm3_pts': 0.1708, 'ewm5_pts': 0.1374, 'roll3_mins': 0.137}
+2026-02-22 18:25:49,213 [INFO]   SHAP chart saved → shap_Midfielder.png
+2026-02-22 18:25:49,214 [INFO]   Training Forward model...
+2026-02-22 18:25:50,189 [INFO]   Forward: RMSE=0.494  R²=0.961  CV-RMSE=2.146  CV-R²=0.238  (train=974, test=92)
+2026-02-22 18:25:50,253 [INFO]   SHAP top features (Forward): {'ewm3_mins': 0.5156, 'ewm3_pts': 0.4302, 'ewm3_creativity': 0.1966, 'roll3_creativity': 0.1593, 'roll5_pts': 0.1283}
+2026-02-22 18:25:50,364 [INFO]   SHAP chart saved → shap_Forward.png
+2026-02-22 18:25:50,366 [INFO] 📊 Model metrics saved → model_metrics.json
+2026-02-22 18:25:50,983 [INFO] Custom difficulty v5 (EWMA+venue-split) for 20 teams — home avg=3.32  away avg=2.99
+2026-02-22 18:25:50,997 [INFO] Team form (match-result): 20 teams, avg=0.317, min=0.056, max=0.556
+2026-02-22 18:25:51,007 [INFO] Opponent scoring map: 14765 pairs.
+2026-02-22 18:25:51,470 [INFO] Run labels: q33=2.95 q66=3.11 | Easy=184 Moderate=181 Tough=154
+2026-02-22 18:25:51,472 [INFO] avg_difficulty: min=2.55 median=3.08 max=3.73
+2026-02-22 18:25:51,472 [INFO] labels: Easy=184 Moderate=181 Tough=154 (n=519)
+2026-02-22 18:42:32,218 [INFO] ✅ Cache is current (GW27) — 20704 rows, 818 players.
+2026-02-22 18:42:32,218 [INFO]   Training Goalkeeper model...
+2026-02-22 18:42:33,001 [INFO]   Goalkeeper: RMSE=0.310  R²=0.984  CV-RMSE=1.674  CV-R²=0.242  (train=1011, test=94)
+2026-02-22 18:42:33,078 [INFO]   SHAP top features (Goalkeeper): {'ewm3_mins': 0.712, 'ewm3_pts': 0.4363, 'price': 0.1105, 'gw_number': 0.1054, 'roll3_saves': 0.1015}
+2026-02-22 18:42:33,214 [INFO]   SHAP chart saved → shap_Goalkeeper.png
+2026-02-22 18:42:33,215 [INFO]   Training Defender model...
+2026-02-22 18:42:34,149 [INFO]   Defender: RMSE=1.065  R²=0.796  CV-RMSE=2.029  CV-R²=0.225  (train=2899, test=265)
+2026-02-22 18:42:34,272 [INFO]   SHAP top features (Defender): {'ewm3_mins': 0.7462, 'ewm3_pts': 0.2671, 'roll3_mins': 0.2614, 'roll5_pts': 0.1741, 'price': 0.1715}
+2026-02-22 18:42:34,393 [INFO]   SHAP chart saved → shap_Defender.png
+2026-02-22 18:42:34,393 [INFO]   Training Midfielder model...
+2026-02-22 18:42:35,511 [INFO]   Midfielder: RMSE=1.099  R²=0.704  CV-RMSE=1.893  CV-R²=0.296  (train=3970, test=367)
+2026-02-22 18:42:35,611 [INFO]   SHAP top features (Midfielder): {'ewm3_mins': 0.7537, 'ewm3_creativity': 0.1913, 'ewm3_pts': 0.1708, 'ewm5_pts': 0.1374, 'roll3_mins': 0.137}
+2026-02-22 18:42:35,741 [INFO]   SHAP chart saved → shap_Midfielder.png
+2026-02-22 18:42:35,741 [INFO]   Training Forward model...
+2026-02-22 18:42:36,764 [INFO]   Forward: RMSE=0.494  R²=0.961  CV-RMSE=2.146  CV-R²=0.238  (train=974, test=92)
+2026-02-22 18:42:36,836 [INFO]   SHAP top features (Forward): {'ewm3_mins': 0.5156, 'ewm3_pts': 0.4302, 'ewm3_creativity': 0.1966, 'roll3_creativity': 0.1593, 'roll5_pts': 0.1283}
+2026-02-22 18:42:36,963 [INFO]   SHAP chart saved → shap_Forward.png
+2026-02-22 18:42:36,964 [INFO] 📊 Model metrics saved → model_metrics.json
+2026-02-22 18:42:37,417 [INFO] 🧩 Training multi-output component models...
+2026-02-22 18:42:37,455 [INFO]   Component [Goalkeeper | goals_scored   ]: RMSE=0.000  best_iter=0
+2026-02-22 18:42:37,531 [INFO]   Component [Goalkeeper | assists        ]: RMSE=0.000  best_iter=74
+2026-02-22 18:42:37,677 [INFO]   Component [Goalkeeper | clean_sheets   ]: RMSE=0.101  best_iter=195
+2026-02-22 18:42:37,827 [INFO]   Component [Goalkeeper | bonus          ]: RMSE=0.181  best_iter=199
+2026-02-22 18:42:38,014 [INFO]   Component [Defender   | goals_scored   ]: RMSE=0.059  best_iter=199
+2026-02-22 18:42:38,186 [INFO]   Component [Defender   | assists        ]: RMSE=0.121  best_iter=199
+2026-02-22 18:42:38,368 [INFO]   Component [Defender   | clean_sheets   ]: RMSE=0.195  best_iter=199
+2026-02-22 18:42:38,548 [INFO]   Component [Defender   | bonus          ]: RMSE=0.171  best_iter=197
+2026-02-22 18:42:38,661 [INFO]   Component [Midfielder | goals_scored   ]: RMSE=0.161  best_iter=39
+2026-02-22 18:42:38,910 [INFO]   Component [Midfielder | assists        ]: RMSE=0.130  best_iter=199
+2026-02-22 18:42:39,137 [INFO]   Component [Midfielder | clean_sheets   ]: RMSE=0.213  best_iter=199
+2026-02-22 18:42:39,350 [INFO]   Component [Midfielder | bonus          ]: RMSE=0.302  best_iter=199
+2026-02-22 18:42:39,532 [INFO]   Component [Forward    | goals_scored   ]: RMSE=0.167  best_iter=199
+2026-02-22 18:42:39,714 [INFO]   Component [Forward    | assists        ]: RMSE=0.031  best_iter=191
+2026-02-22 18:42:39,883 [INFO]   Component [Forward    | clean_sheets   ]: RMSE=0.136  best_iter=199
+2026-02-22 18:42:40,059 [INFO]   Component [Forward    | bonus          ]: RMSE=0.323  best_iter=199
+2026-02-22 18:42:40,091 [INFO] 💰 Training price rise/fall prediction model...
+2026-02-22 18:42:40,325 [INFO]   Price model: RMSE=0.1737  R²=0.097  (train=17598, test=3106)
+2026-02-22 18:42:40,629 [INFO] Custom difficulty v5 (EWMA+venue-split) for 20 teams — home avg=3.32  away avg=2.99
+2026-02-22 18:42:40,642 [INFO] Team form (match-result): 20 teams, avg=0.317, min=0.056, max=0.556
+2026-02-22 18:42:40,653 [INFO] Opponent scoring map: 14765 pairs.
+2026-02-22 18:42:40,663 [INFO] CS probability map: 6460 player/opponent pairs.
+2026-02-22 18:42:41,258 [INFO] Run labels: q33=2.95 q66=3.11 | Easy=184 Moderate=181 Tough=155
+2026-02-22 18:42:41,261 [INFO] avg_difficulty: min=2.55 median=3.08 max=3.73
+2026-02-22 18:42:41,261 [INFO] labels: Easy=184 Moderate=181 Tough=155 (n=520)
+2026-02-22 18:47:47,356 [INFO] 🔄 --refresh flag set.
+2026-02-22 18:47:47,359 [INFO] Fetching history for 818 players...
+2026-02-22 18:47:47,360 [INFO]   0/818
+2026-02-22 18:47:48,939 [INFO] ✅ Cache is current (GW27) — 20704 rows, 818 players.
+2026-02-22 18:47:48,940 [INFO]   Training Goalkeeper model...
+2026-02-22 18:47:49,605 [INFO]   Goalkeeper: RMSE=0.310  R²=0.984  CV-RMSE=1.674  CV-R²=0.242  (train=1011, test=94)
+2026-02-22 18:47:49,675 [INFO]   SHAP top features (Goalkeeper): {'ewm3_mins': 0.712, 'ewm3_pts': 0.4363, 'price': 0.1105, 'gw_number': 0.1054, 'roll3_saves': 0.1015}
+2026-02-22 18:47:49,808 [INFO]   SHAP chart saved → shap_Goalkeeper.png
+2026-02-22 18:47:49,808 [INFO]   Training Defender model...
+2026-02-22 18:47:50,663 [INFO]   Defender: RMSE=1.065  R²=0.796  CV-RMSE=2.029  CV-R²=0.225  (train=2899, test=265)
+2026-02-22 18:47:50,748 [INFO]   SHAP top features (Defender): {'ewm3_mins': 0.7462, 'ewm3_pts': 0.2671, 'roll3_mins': 0.2614, 'roll5_pts': 0.1741, 'price': 0.1715}
+2026-02-22 18:47:50,859 [INFO]   SHAP chart saved → shap_Defender.png
+2026-02-22 18:47:50,860 [INFO]   Training Midfielder model...
+2026-02-22 18:47:51,904 [INFO]   Midfielder: RMSE=1.099  R²=0.704  CV-RMSE=1.893  CV-R²=0.296  (train=3970, test=367)
+2026-02-22 18:47:51,999 [INFO]   SHAP top features (Midfielder): {'ewm3_mins': 0.7537, 'ewm3_creativity': 0.1913, 'ewm3_pts': 0.1708, 'ewm5_pts': 0.1374, 'roll3_mins': 0.137}
+2026-02-22 18:47:52,107 [INFO]   SHAP chart saved → shap_Midfielder.png
+2026-02-22 18:47:52,107 [INFO]   Training Forward model...
+2026-02-22 18:47:52,975 [INFO]   Forward: RMSE=0.494  R²=0.961  CV-RMSE=2.146  CV-R²=0.238  (train=974, test=92)
+2026-02-22 18:47:53,042 [INFO]   SHAP top features (Forward): {'ewm3_mins': 0.5156, 'ewm3_pts': 0.4302, 'ewm3_creativity': 0.1966, 'roll3_creativity': 0.1593, 'roll5_pts': 0.1283}
+2026-02-22 18:47:53,148 [INFO]   SHAP chart saved → shap_Forward.png
+2026-02-22 18:47:53,150 [INFO] 📊 Model metrics saved → model_metrics.json
+2026-02-22 18:47:53,566 [INFO] 🧩 Training multi-output component models...
+2026-02-22 18:47:53,604 [INFO]   Component [Goalkeeper | goals_scored   ]: RMSE=0.000  best_iter=0
+2026-02-22 18:47:53,679 [INFO]   Component [Goalkeeper | assists        ]: RMSE=0.000  best_iter=74
+2026-02-22 18:47:53,806 [INFO]   Component [Goalkeeper | clean_sheets   ]: RMSE=0.101  best_iter=195
+2026-02-22 18:47:54,043 [INFO]   Component [Goalkeeper | bonus          ]: RMSE=0.181  best_iter=199
+2026-02-22 18:47:54,220 [INFO]   Component [Defender   | goals_scored   ]: RMSE=0.059  best_iter=199
+2026-02-22 18:47:54,377 [INFO]   Component [Defender   | assists        ]: RMSE=0.121  best_iter=199
+2026-02-22 18:47:54,564 [INFO]   Component [Defender   | clean_sheets   ]: RMSE=0.195  best_iter=199
+2026-02-22 18:47:54,738 [INFO]   Component [Defender   | bonus          ]: RMSE=0.171  best_iter=197
+2026-02-22 18:47:54,838 [INFO]   Component [Midfielder | goals_scored   ]: RMSE=0.161  best_iter=39
+2026-02-22 18:47:55,024 [INFO]   Component [Midfielder | assists        ]: RMSE=0.130  best_iter=199
+2026-02-22 18:47:55,245 [INFO]   Component [Midfielder | clean_sheets   ]: RMSE=0.213  best_iter=199
+2026-02-22 18:47:55,446 [INFO]   Component [Midfielder | bonus          ]: RMSE=0.302  best_iter=199
+2026-02-22 18:47:55,603 [INFO]   Component [Forward    | goals_scored   ]: RMSE=0.167  best_iter=199
+2026-02-22 18:47:55,763 [INFO]   Component [Forward    | assists        ]: RMSE=0.031  best_iter=191
+2026-02-22 18:47:55,923 [INFO]   Component [Forward    | clean_sheets   ]: RMSE=0.136  best_iter=199
+2026-02-22 18:47:56,084 [INFO]   Component [Forward    | bonus          ]: RMSE=0.323  best_iter=199
+2026-02-22 18:47:56,113 [INFO] 💰 Training price rise/fall prediction model...
+2026-02-22 18:47:56,274 [INFO]   Price model: RMSE=0.1737  R²=0.097  (train=17598, test=3106)
+2026-02-22 18:47:56,488 [INFO] Custom difficulty v5 (EWMA+venue-split) for 20 teams — home avg=3.32  away avg=2.99
+2026-02-22 18:47:56,509 [INFO] Team form (match-result): 20 teams, avg=0.317, min=0.056, max=0.556
+2026-02-22 18:47:56,521 [INFO] Opponent scoring map: 14765 pairs.
+2026-02-22 18:47:56,531 [INFO] CS probability map: 6460 player/opponent pairs.
+2026-02-22 18:47:57,185 [INFO] Run labels: q33=2.95 q66=3.11 | Easy=184 Moderate=181 Tough=155
+2026-02-22 18:47:57,188 [INFO] avg_difficulty: min=2.55 median=3.08 max=3.73
+2026-02-22 18:47:57,188 [INFO] labels: Easy=184 Moderate=181 Tough=155 (n=520)
+2026-02-22 18:48:14,055 [INFO]   50/818
+2026-02-22 18:48:39,279 [INFO]   100/818
+2026-02-22 18:49:09,066 [INFO]   150/818
+2026-02-22 18:49:35,597 [INFO]   200/818
+2026-02-22 18:49:59,904 [INFO]   250/818
+2026-02-22 18:50:24,843 [INFO]   300/818
+2026-02-22 18:50:50,552 [INFO]   350/818
+2026-02-22 18:51:15,992 [INFO]   400/818
+2026-02-22 18:51:55,245 [INFO] ✅ Cache is current (GW27) — 20704 rows, 818 players.
+2026-02-22 18:51:55,245 [INFO]   Training Goalkeeper model...
+2026-02-22 18:51:55,783 [INFO]   Goalkeeper: RMSE=0.310  R²=0.984  CV-RMSE=1.674  CV-R²=0.242  (train=1011, test=94)
+2026-02-22 18:51:55,842 [INFO]   SHAP top features (Goalkeeper): {'ewm3_mins': 0.712, 'ewm3_pts': 0.4363, 'price': 0.1105, 'gw_number': 0.1054, 'roll3_saves': 0.1015}
+2026-02-22 18:51:56,230 [INFO]   SHAP chart saved → shap_Goalkeeper.png
+2026-02-22 18:51:56,231 [INFO]   Training Defender model...
+2026-02-22 18:51:56,992 [INFO]   Defender: RMSE=1.065  R²=0.796  CV-RMSE=2.029  CV-R²=0.225  (train=2899, test=265)
+2026-02-22 18:51:57,071 [INFO]   SHAP top features (Defender): {'ewm3_mins': 0.7462, 'ewm3_pts': 0.2671, 'roll3_mins': 0.2614, 'roll5_pts': 0.1741, 'price': 0.1715}
+2026-02-22 18:51:57,178 [INFO]   SHAP chart saved → shap_Defender.png
+2026-02-22 18:51:57,178 [INFO]   Training Midfielder model...
+2026-02-22 18:51:58,085 [INFO]   Midfielder: RMSE=1.099  R²=0.704  CV-RMSE=1.893  CV-R²=0.296  (train=3970, test=367)
+2026-02-22 18:51:58,171 [INFO]   SHAP top features (Midfielder): {'ewm3_mins': 0.7537, 'ewm3_creativity': 0.1913, 'ewm3_pts': 0.1708, 'ewm5_pts': 0.1374, 'roll3_mins': 0.137}
+2026-02-22 18:51:58,276 [INFO]   SHAP chart saved → shap_Midfielder.png
+2026-02-22 18:51:58,277 [INFO]   Training Forward model...
+2026-02-22 18:51:59,031 [INFO]   Forward: RMSE=0.494  R²=0.961  CV-RMSE=2.146  CV-R²=0.238  (train=974, test=92)
+2026-02-22 18:51:59,093 [INFO]   SHAP top features (Forward): {'ewm3_mins': 0.5156, 'ewm3_pts': 0.4302, 'ewm3_creativity': 0.1966, 'roll3_creativity': 0.1593, 'roll5_pts': 0.1283}
+2026-02-22 18:51:59,195 [INFO]   SHAP chart saved → shap_Forward.png
+2026-02-22 18:51:59,197 [INFO] 📊 Model metrics saved → model_metrics.json
+2026-02-22 18:51:59,529 [INFO] 🧩 Training multi-output component models...
+2026-02-22 18:51:59,563 [INFO]   Component [Goalkeeper | goals_scored   ]: RMSE=0.000  best_iter=0
+2026-02-22 18:51:59,627 [INFO]   Component [Goalkeeper | assists        ]: RMSE=0.000  best_iter=74
+2026-02-22 18:51:59,742 [INFO]   Component [Goalkeeper | clean_sheets   ]: RMSE=0.101  best_iter=195
+2026-02-22 18:51:59,860 [INFO]   Component [Goalkeeper | bonus          ]: RMSE=0.181  best_iter=199
+2026-02-22 18:52:00,008 [INFO]   Component [Defender   | goals_scored   ]: RMSE=0.059  best_iter=199
+2026-02-22 18:52:00,153 [INFO]   Component [Defender   | assists        ]: RMSE=0.121  best_iter=199
+2026-02-22 18:52:00,296 [INFO]   Component [Defender   | clean_sheets   ]: RMSE=0.195  best_iter=199
+2026-02-22 18:52:00,437 [INFO]   Component [Defender   | bonus          ]: RMSE=0.171  best_iter=197
+2026-02-22 18:52:00,524 [INFO]   Component [Midfielder | goals_scored   ]: RMSE=0.161  best_iter=39
+2026-02-22 18:52:00,695 [INFO]   Component [Midfielder | assists        ]: RMSE=0.130  best_iter=199
+2026-02-22 18:52:00,897 [INFO]   Component [Midfielder | clean_sheets   ]: RMSE=0.213  best_iter=199
+2026-02-22 18:52:01,119 [INFO]   Component [Midfielder | bonus          ]: RMSE=0.302  best_iter=199
+2026-02-22 18:52:01,265 [INFO]   Component [Forward    | goals_scored   ]: RMSE=0.167  best_iter=199
+2026-02-22 18:52:01,402 [INFO]   Component [Forward    | assists        ]: RMSE=0.031  best_iter=191
+2026-02-22 18:52:01,542 [INFO]   Component [Forward    | clean_sheets   ]: RMSE=0.136  best_iter=199
+2026-02-22 18:52:01,682 [INFO]   Component [Forward    | bonus          ]: RMSE=0.323  best_iter=199
+2026-02-22 18:52:01,710 [INFO] 💰 Training price rise/fall prediction model...
+2026-02-22 18:52:01,864 [INFO]   Price model: RMSE=0.1737  R²=0.097  (train=17598, test=3106)
+2026-02-22 18:52:02,056 [INFO] Custom difficulty v5 (EWMA+venue-split) for 20 teams — home avg=3.32  away avg=2.99
+2026-02-22 18:52:02,066 [INFO] Team form (match-result): 20 teams, avg=0.317, min=0.056, max=0.556
+2026-02-22 18:52:02,075 [INFO] Opponent scoring map: 14765 pairs.
+2026-02-22 18:52:02,083 [INFO] CS probability map: 6460 player/opponent pairs.
+2026-02-22 18:52:02,668 [INFO] Run labels: q33=2.95 q66=3.11 | Easy=184 Moderate=181 Tough=155
+2026-02-22 18:52:02,669 [INFO] avg_difficulty: min=2.55 median=3.08 max=3.73
+2026-02-22 18:52:02,670 [INFO] labels: Easy=184 Moderate=181 Tough=155 (n=520)

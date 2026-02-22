@@ -1,46 +1,54 @@
 """
-FPL AI Assistant — Phase 4: Starting XI Optimizer (v3 - Full Rebuild)
-======================================================================
-New improvements:
+FPL AI Assistant — Phase 4: Starting XI Optimizer (v5)
+======================================================
+New in v5 (5 algorithmic additions):
 
-  ALGORITHMIC:
-  1. ILP for Starting XI — selects all 11 simultaneously, formation
-     adapts automatically to injuries and blanks via constraints
-  2. xPts captain weighting — predicted_pts * (1 + roll3_threat/100)
-     captures upside variance, not just average ceiling
-  3. Probability-weighted auto-substitution — uses chance_of_playing
-     to compute expected bench contribution properly
+  🔴 ALGORITHMIC:
+  1. ILP soft injury penalty — objective now weights each player by
+     p_plays_full so rotation risks don't start at full value.
+     objective_i = combined_score_i * p_plays_full_i
+     A player predicted 9 pts but only 40% chance of playing contributes
+     3.6 to the objective, not 9. Formation adapts to real availability.
 
-  MISSING FUNCTIONALITY:
-  4. Triple Captain chip detection — recalculates captain score as 3x
-     when Triple Captain chip is available
-  5. Bench Boost chip detection — optimises all 15 players when
-     Bench Boost available, not just starting 11
-  6. Starting XI vs Transfer interaction — shows optimal XI
-     before AND after recommended transfer
-  7. Vice captain auto-sub rule — VC picked as best backup captain
-     (high predicted pts AND high chance_of_playing as safety net)
+  2. Monte Carlo captain — imports run_monte_carlo_captain from Phase 3
+     and surfaces win_prob + expected_captain_gain for top-3 options.
+     Shows exactly how likely each captain choice is to be optimal across
+     1,000 simulations from the pts_low/pts_high quantile distribution.
 
-  DISPLAY:
-  8. Expected XI score range — confidence interval based on
-     position-specific model RMSE
-  9. GW-by-GW XI recommendation — optimal XI for next 3 GWs
+  3. Bench ordering from Phase 3 — imports get_bench_order_recommendation
+     from Phase 3 v5, which uses bench_ev = expected_pts × P(auto-sub
+     needed) × gk_penalty. Replaces the inferior combined_score sort.
+     GK always last. First sub is the highest bench_ev outfield player.
 
-  FIXES FROM ALL PREVIOUS PHASES:
-  - train_models() correct, build_current_features() correct
-  - my_player_ids passed, pkl correct format
-  - build_player_fixture_scores() with all required args
-  - build_fixture_run() with custom_difficulty
-  - TEAM_ID, VALID_FORMATIONS, FIXTURE_LOOKAHEAD from config
-  - Logging throughout, unused imports removed
+  🟡 FEATURE:
+  4. fixture_trend decay in multi-GW captain score — for GW+2 and GW+3
+     captain recommendations, captain_ev is penalised by fixture_trend:
+     gw_cap_ev = captain_ev - max(0, fixture_trend * gw_offset * 0.3)
+     A player whose fixtures get harder over the window is correctly
+     downgraded as a future captain option.
 
-Run normally:
-  python fpl_phase4_optimizer.py
+  5. Post-transfer bench score delta — print_post_transfer_xi now shows
+     the change in bench auto-sub score after the transfer:
+     bench_delta = after_bench_score - before_bench_score
+     Sometimes a transfer improves the bench more than the XI.
 
-Force fresh data:
-  python fpl_phase4_optimizer.py --refresh
+Changes preserved from v4 (10 fixes):
+  - Phase 1 v5 pipeline (component blend, expected_pts, prices)
+  - pkl freshness check
+  - xpts_captain_score uses expected_pts not predicted_pts
+  - vc_safety_score uses p_plays_full not chance_of_playing
+  - _prob_weighted_bench_score uses p_plays_full for starters
+  - compute_score_range uses pts_low/pts_high quantile CI
+  - recommend_xi_multi_gw per-GW correct scoring
+  - Captain uses captain_ev from Phase 2 v5
+  - Bench Boost uses captain_ev
+  - cs_probability_map passed to build_player_fixture_scores
+
+Run normally:  python fpl_phase4_optimizer.py
+Force refresh: python fpl_phase4_optimizer.py --refresh
 """
 
+import os
 import sys
 import logging
 import pickle
@@ -63,8 +71,14 @@ from fpl_phase1_model import (
     build_player_history_df,
     build_current_features,
     train_models,
+    train_component_models,
+    predict_component_pts,
+    add_price_predictions,
+    train_price_model,
+    compute_expected_pts,
     FEATURE_COLS,
     LOG_FILE,
+    COMPONENT_BLEND_WEIGHT,
 )
 from fpl_phase2_fixtures import (
     build_custom_difficulty,
@@ -73,6 +87,7 @@ from fpl_phase2_fixtures import (
     build_chip_status,
     build_fixture_run,
     build_player_fixture_scores,
+    build_cs_probability_map,
 )
 from fpl_phase3_constraints import (
     validate_squad,
@@ -80,6 +95,8 @@ from fpl_phase3_constraints import (
     get_valid_double_transfers,
     print_ilp_result,
     print_double_transfers,
+    run_monte_carlo_captain,
+    get_bench_order_recommendation,
 )
 
 try:
@@ -98,8 +115,7 @@ except ImportError:
         (4, 5, 1), (5, 3, 2), (5, 4, 1),
     ]
 
-# Position RMSE from Phase 1 models — used for confidence intervals
-# Updated each run from saved model metadata
+# Fallback RMSE per position (used when pts_low/pts_high absent)
 DEFAULT_RMSE = {
     "Goalkeeper": 1.6,
     "Defender":   2.1,
@@ -125,6 +141,7 @@ log = logging.getLogger(__name__)
 # ─────────────────────────────────────────
 
 def formation_name(d: int, m: int, f: int) -> str:
+    """Return formation string e.g. '4-4-2'."""
     return f"{d}-{m}-{f}"
 
 
@@ -136,50 +153,67 @@ def get_rmse_from_models(models: dict) -> dict:
     return rmse
 
 
+def _xpts_base(row: pd.Series) -> float:
+    """
+    Return the rotation-risk-adjusted expected pts for a player.
+    Prefers expected_pts (Phase 1 v5) over predicted_pts (v3 fallback).
+    """
+    xpts = row.get("expected_pts")
+    if xpts is not None and not pd.isna(xpts) and float(xpts) > 0:
+        return float(xpts)
+    return float(row.get("predicted_pts", 0))
+
+
 def xpts_captain_score(row: pd.Series,
                         triple_captain: bool = False) -> float:
     """
     Expected points score for captain consideration.
 
-    Improvement #2: uses predicted_pts * (1 + roll3_threat/100)
-    as a proxy for upside variance. A player with high threat
-    has more attacking intent and higher ceiling than raw pts suggest.
+    v4 fix: uses expected_pts (rotation-risk adjusted) as base instead
+    of predicted_pts. roll3_threat upside proxy preserved.
 
-    Improvement #4: triple_captain=True scores 3x instead of 2x.
-
+    Multiplier: 3x if Triple Captain available, else 2x.
+    DGW boost via CAPTAIN_DGW_MULTIPLIER.
     Blank GW players always return 0.
-    DGW players get CAPTAIN_DGW_MULTIPLIER boost.
     """
     if row.get("is_blank_next_gw", False):
         return 0.0
 
-    pts      = row.get("predicted_pts", 0)
-    threat   = row.get("roll3_threat", 0) or 0
-    upside   = 1 + (float(threat) / 100)
-    xpts     = pts * upside
+    # v4: use expected_pts (rotation-aware) as base
+    pts    = _xpts_base(row)
+    threat = float(row.get("roll3_threat", 0) or 0)
+    upside = 1.0 + (threat / 100.0)
+    xpts   = pts * upside
 
-    # DGW boost
     if row.get("double_gws", 0) > 0:
         xpts *= CAPTAIN_DGW_MULTIPLIER
 
-    # Captain multiplier
     multiplier = 3 if triple_captain else 2
     return round(xpts * multiplier, 3)
 
 
 def vc_safety_score(row: pd.Series) -> float:
     """
-    Improvement #7: VC picked as best backup captain.
-    FPL rule: if captain doesn't play, VC gets the double.
-    So VC should combine high predicted_pts AND high reliability
-    (chance_of_playing). We want someone almost certain to play
-    with a high score — not a risky high-ceiling player.
+    VC safety score — combines high expected pts with high reliability.
+
+    v4 fix: uses expected_pts * p_plays_full (Phase 1 v5 continuous
+    rotation probability) instead of predicted_pts * chance_of_playing.
+    p_plays_full is derived from rolling minutes + injury %, more sensitive
+    than the raw FPL categorical field. Falls back gracefully.
     """
     if row.get("is_blank_next_gw", False):
         return 0.0
-    pts    = row.get("predicted_pts", 0)
-    chance = row.get("chance_of_playing", 100) / 100
-    return round(pts * chance, 3)
+
+    pts = _xpts_base(row)
+
+    # v4: prefer p_plays_full (Phase 1 v5) over chance_of_playing (v3)
+    p_full = row.get("p_plays_full")
+    if p_full is not None and not pd.isna(p_full):
+        reliability = float(p_full)
+    else:
+        reliability = float(row.get("chance_of_playing", 100)) / 100.0
+
+    return round(pts * reliability, 3)
 
 
 # ─────────────────────────────────────────
@@ -190,29 +224,15 @@ def optimize_xi_ilp(squad_df: pd.DataFrame,
                      triple_captain: bool = False,
                      bench_boost: bool = False) -> dict:
     """
-    Improvement #1: ILP-based Starting XI optimizer.
+    ILP-based Starting XI optimizer.
 
-    Selects all 11 players simultaneously — formation adapts
-    automatically to injuries and blanks via constraints.
+    Selects all 11 players simultaneously — formation adapts automatically
+    to injuries and blanks via constraints. Falls back to brute-force if
+    PuLP unavailable.
 
-    Formulation:
-      Binary variable x_i = 1 if player i starts
-      Objective: maximise sum of combined_score for starters
-                 (or all 15 players if bench_boost=True)
-      Constraints:
-        - sum(x_i) == 11  (or 15 for bench boost)
-        - exactly 1 GK starts
-        - 3 <= sum(DEF starters) <= 5
-        - 2 <= sum(MID starters) <= 5
-        - 1 <= sum(FWD starters) <= 3
-        - blank GW players forced to bench (x_i = 0)
-
-    Falls back to brute-force if PuLP unavailable.
-
-    Improvement #5: bench_boost=True maximises all 15 players.
+    bench_boost=True: all 15 players score, selects best captain.
     """
     if bench_boost:
-        # Bench Boost: all 15 players score — no XI/bench split needed
         return _bench_boost_mode(squad_df, triple_captain)
 
     if not PULP_AVAILABLE:
@@ -224,27 +244,41 @@ def optimize_xi_ilp(squad_df: pd.DataFrame,
     prob    = pulp.LpProblem("Starting_XI", pulp.LpMaximize)
     x       = [pulp.LpVariable(f"x_{i}", cat="Binary") for i in range(n)]
 
-    # Objective: maximise combined_score of starters
-    prob += pulp.lpSum(players.loc[i, "combined_score"] * x[i] for i in range(n))
+    # Item 1 (v5): soft injury penalty — weight objective by p_plays_full.
+    # objective_i = combined_score_i * p_plays_full_i
+    # A player with p_plays_full=0.4 contributes 40% of their combined_score.
+    # Falls back to 1.0 (no penalty) when p_plays_full column absent.
+    has_p_full = "p_plays_full" in players.columns
+    def _obj_weight(i: int) -> float:
+        if not has_p_full:
+            return 1.0
+        val = players.loc[i, "p_plays_full"]
+        return float(val) if (val is not None and not pd.isna(val)) else 1.0
+
+    # Objective: maximise p_plays_full-weighted combined_score of starters
+    prob += pulp.lpSum(
+        players.loc[i, "combined_score"] * _obj_weight(i) * x[i]
+        for i in range(n)
+    )
 
     # Exactly 11 starters
     prob += (pulp.lpSum(x) == 11, "squad_size")
 
     # GK: exactly 1 starts
-    gk_idx = players[players["position"] == "Goalkeeper"].index.tolist()
+    gk_idx  = players[players["position"] == "Goalkeeper"].index.tolist()
     prob += (pulp.lpSum(x[i] for i in gk_idx) == 1, "gk")
 
-    # DEF: 3 to 5
+    # DEF: 3–5
     def_idx = players[players["position"] == "Defender"].index.tolist()
     prob += (pulp.lpSum(x[i] for i in def_idx) >= 3, "min_def")
     prob += (pulp.lpSum(x[i] for i in def_idx) <= 5, "max_def")
 
-    # MID: 2 to 5
+    # MID: 2–5
     mid_idx = players[players["position"] == "Midfielder"].index.tolist()
     prob += (pulp.lpSum(x[i] for i in mid_idx) >= 2, "min_mid")
     prob += (pulp.lpSum(x[i] for i in mid_idx) <= 5, "max_mid")
 
-    # FWD: 1 to 3
+    # FWD: 1–3
     fwd_idx = players[players["position"] == "Forward"].index.tolist()
     prob += (pulp.lpSum(x[i] for i in fwd_idx) >= 1, "min_fwd")
     prob += (pulp.lpSum(x[i] for i in fwd_idx) <= 3, "max_fwd")
@@ -267,10 +301,9 @@ def optimize_xi_ilp(squad_df: pd.DataFrame,
     starting_xi = players.loc[start_idx].reset_index(drop=True)
     bench_pool  = players.loc[bench_idx].copy()
 
-    # Detect formation from selected players
-    def_n = (starting_xi["position"] == "Defender").sum()
-    mid_n = (starting_xi["position"] == "Midfielder").sum()
-    fwd_n = (starting_xi["position"] == "Forward").sum()
+    def_n = int((starting_xi["position"] == "Defender").sum())
+    mid_n = int((starting_xi["position"] == "Midfielder").sum())
+    fwd_n = int((starting_xi["position"] == "Forward").sum())
 
     return _build_result(
         starting_xi, bench_pool, squad_df,
@@ -282,20 +315,31 @@ def optimize_xi_ilp(squad_df: pd.DataFrame,
 def _bench_boost_mode(squad_df: pd.DataFrame,
                        triple_captain: bool) -> dict:
     """
-    Improvement #5: Bench Boost mode.
-    All 15 players score — rank captain by xPts across full squad.
-    Returns a result dict marked as bench_boost=True.
+    Bench Boost mode — all 15 players score.
+
+    v4: uses captain_ev (Phase 2 v5) for captain selection if present,
+    falls back to xpts_captain_score.
     """
     players = squad_df.reset_index(drop=True).copy()
-    players["cap_score"] = players.apply(
-        lambda r: xpts_captain_score(r, triple_captain), axis=1
-    )
-    captain      = players.nlargest(1, "cap_score").iloc[0]
-    vice_captain_row = players[
-        players["player_id"] != captain["player_id"]
-    ].copy()
-    vice_captain_row["vc_score"] = vice_captain_row.apply(vc_safety_score, axis=1)
-    vice_captain = vice_captain_row.nlargest(1, "vc_score").iloc[0]
+
+    # v4 fix #9: use captain_ev if available
+    if "captain_ev" in players.columns:
+        cap_col = "captain_ev"
+        # Apply TC multiplier on top (captain_ev is already 2x, multiply by 1.5x for 3x)
+        if triple_captain:
+            players["_cap_sort"] = players["captain_ev"] * 1.5
+        else:
+            players["_cap_sort"] = players["captain_ev"]
+        captain = players.nlargest(1, "_cap_sort").iloc[0]
+    else:
+        players["_cap_score"] = players.apply(
+            lambda r: xpts_captain_score(r, triple_captain), axis=1
+        )
+        captain = players.nlargest(1, "_cap_score").iloc[0]
+
+    vc_pool = players[players["player_id"] != captain["player_id"]].copy()
+    vc_pool["_vc_score"] = vc_pool.apply(vc_safety_score, axis=1)
+    vice_captain = vc_pool.nlargest(1, "_vc_score").iloc[0]
 
     return {
         "formation":            "BENCH BOOST (All 15 play)",
@@ -321,38 +365,69 @@ def _build_result(starting_xi: pd.DataFrame,
                    method: str = "ILP") -> dict:
     """
     Build result dict from selected XI and bench.
-    Handles captain (xPts + DGW + TC), VC (safety score), bench ordering.
+
+    v4 fix #8: captain selection prefers captain_ev (Phase 2 v5) over
+    local xpts_captain_score when the column is available.
     """
-    # Captain: xPts weighted (improvement #2 + #4)
     xi_copy = starting_xi.copy()
-    xi_copy["cap_score"] = xi_copy.apply(
-        lambda r: xpts_captain_score(r, triple_captain), axis=1
-    )
-    captain      = xi_copy.nlargest(1, "cap_score").iloc[0]
 
-    # VC: safety score — likely to play + high pts (improvement #7)
-    vc_pool = xi_copy[xi_copy["player_id"] != captain["player_id"]].copy()
-    vc_pool["vc_score"] = vc_pool.apply(vc_safety_score, axis=1)
-    vice_captain = vc_pool.nlargest(1, "vc_score").iloc[0]
-
-    # Bench order: non-blank outfield first, then blank, GK last
-    bench_gk      = bench_pool[bench_pool["position"] == "Goalkeeper"]
-    bench_outfield = bench_pool[bench_pool["position"] != "Goalkeeper"]
-
-    if "is_blank_next_gw" in bench_outfield.columns:
-        bench_non_blank = bench_outfield[~bench_outfield["is_blank_next_gw"]] \
-                          .sort_values("combined_score", ascending=False)
-        bench_blanks    = bench_outfield[bench_outfield["is_blank_next_gw"]]
+    # v4 fix #8: use captain_ev if present
+    if "captain_ev" in xi_copy.columns:
+        if triple_captain:
+            xi_copy["_cap_sort"] = xi_copy["captain_ev"] * 1.5
+        else:
+            xi_copy["_cap_sort"] = xi_copy["captain_ev"]
+        captain = xi_copy.nlargest(1, "_cap_sort").iloc[0]
     else:
-        bench_non_blank = bench_outfield.sort_values("combined_score", ascending=False)
-        bench_blanks    = pd.DataFrame()
+        xi_copy["_cap_score"] = xi_copy.apply(
+            lambda r: xpts_captain_score(r, triple_captain), axis=1
+        )
+        captain = xi_copy.nlargest(1, "_cap_score").iloc[0]
 
-    bench_ordered = pd.concat(
-        [b for b in [bench_non_blank, bench_blanks, bench_gk] if not b.empty],
-        ignore_index=True
-    )
+    # VC: safety score using expected_pts * p_plays_full (v4 fix #4)
+    vc_pool = xi_copy[xi_copy["player_id"] != captain["player_id"]].copy()
+    vc_pool["_vc_score"] = vc_pool.apply(vc_safety_score, axis=1)
+    vice_captain = vc_pool.nlargest(1, "_vc_score").iloc[0]
 
-    # Bench auto-sub score (improvement #3 — probability weighted)
+    # Item 3 (v5): bench ordering via Phase 3's get_bench_order_recommendation.
+    # Uses bench_ev = expected_pts × P(auto-sub needed) × gk_penalty.
+    # GK always last. Falls back to combined_score sort if Phase 3 fails.
+    try:
+        bench_rec        = get_bench_order_recommendation(squad_df)
+        p3_bench_order   = bench_rec.get("bench_order", [])  # list of player names
+        p3_bench_df      = bench_rec.get("bench", pd.DataFrame())
+
+        if p3_bench_order and not p3_bench_df.empty:
+            # Reorder bench_pool to match Phase 3's recommended order.
+            # Match on player_name; any ILP bench players not in Phase 3's list
+            # (edge case: ILP XI ≠ Phase 3 greedy XI) go at end by combined_score.
+            name_rank = {name: i for i, name in enumerate(p3_bench_order)}
+            bench_pool_sorted = bench_pool.copy()
+            bench_pool_sorted["_p3_rank"] = bench_pool_sorted["player_name"].map(
+                lambda n: name_rank.get(n, 999)
+            )
+            bench_ordered = bench_pool_sorted.sort_values("_p3_rank").drop(
+                columns=["_p3_rank"]
+            ).reset_index(drop=True)
+        else:
+            raise ValueError("Empty Phase 3 bench recommendation")
+
+    except Exception:
+        # Fallback: non-blank outfield first (by combined_score), GK last
+        bench_gk       = bench_pool[bench_pool["position"] == "Goalkeeper"]
+        bench_outfield = bench_pool[bench_pool["position"] != "Goalkeeper"]
+        if "is_blank_next_gw" in bench_outfield.columns:
+            bench_non_blank = bench_outfield[~bench_outfield["is_blank_next_gw"]] \
+                              .sort_values("combined_score", ascending=False)
+            bench_blanks    = bench_outfield[bench_outfield["is_blank_next_gw"]]
+        else:
+            bench_non_blank = bench_outfield.sort_values("combined_score", ascending=False)
+            bench_blanks    = pd.DataFrame()
+        bench_ordered = pd.concat(
+            [b for b in [bench_non_blank, bench_blanks, bench_gk] if not b.empty],
+            ignore_index=True
+        )
+
     bench_val = _prob_weighted_bench_score(bench_ordered, squad_df)
 
     return {
@@ -396,19 +471,22 @@ def best_combination(players_df: pd.DataFrame,
 
 
 def best_gk_for_gw(gks_df: pd.DataFrame) -> pd.DataFrame:
-    """Pick GK with best predicted_pts for upcoming GW."""
+    """Pick GK with best expected_pts (fallback predicted_pts) for upcoming GW."""
     if gks_df.empty:
         return gks_df
     if "is_blank_next_gw" in gks_df.columns:
         playing = gks_df[~gks_df["is_blank_next_gw"]]
         if not playing.empty:
-            return playing.nlargest(1, "predicted_pts").iloc[[0]]
-    return gks_df.nlargest(1, "combined_score").iloc[[0]]
+            # v4: prefer expected_pts for GK selection
+            sort_col = "expected_pts" if "expected_pts" in playing.columns else "predicted_pts"
+            return playing.nlargest(1, sort_col).iloc[[0]]
+    sort_col = "expected_pts" if "expected_pts" in gks_df.columns else "combined_score"
+    return gks_df.nlargest(1, sort_col).iloc[[0]]
 
 
 def optimize_xi_bruteforce(squad_df: pd.DataFrame,
                              triple_captain: bool = False) -> dict:
-    """Brute-force fallback when PuLP unavailable."""
+    """Brute-force Starting XI fallback when PuLP unavailable."""
     if "is_blank_next_gw" in squad_df.columns:
         available = squad_df[~squad_df["is_blank_next_gw"]].copy()
     else:
@@ -426,18 +504,16 @@ def optimize_xi_bruteforce(squad_df: pd.DataFrame,
         if len(defs) < def_n or len(mids) < mid_n or \
            len(fwds) < fwd_n or gks.empty:
             continue
-
         xi = pd.concat([
             best_gk_for_gw(gks),
             best_combination(defs, def_n),
             best_combination(mids, mid_n),
             best_combination(fwds, fwd_n),
         ], ignore_index=True)
-
         score = xi["combined_score"].sum()
         if score > best_score:
-            best_score  = score
-            bench_pool  = squad_df[
+            best_score = score
+            bench_pool = squad_df[
                 ~squad_df["player_id"].isin(xi["player_id"])
             ].copy()
             best_result = _build_result(
@@ -445,12 +521,11 @@ def optimize_xi_bruteforce(squad_df: pd.DataFrame,
                 formation_name(def_n, mid_n, fwd_n),
                 triple_captain, method="BruteForce"
             )
-
     return best_result
 
 
 def score_all_formations(squad_df: pd.DataFrame) -> list:
-    """Score every valid formation. Used for formation comparison table."""
+    """Score every valid formation for the formation comparison table."""
     if "is_blank_next_gw" in squad_df.columns:
         available = squad_df[~squad_df["is_blank_next_gw"]].copy()
     else:
@@ -472,9 +547,15 @@ def score_all_formations(squad_df: pd.DataFrame) -> list:
             best_combination(mids, mid_n),
             best_combination(fwds, fwd_n),
         ], ignore_index=True)
+        # v4: show expected_pts alongside predicted_pts
+        xpts_total = round(
+            xi["expected_pts"].sum() if "expected_pts" in xi.columns
+            else xi["predicted_pts"].sum(), 2
+        )
         results.append({
             "formation": formation_name(def_n, mid_n, fwd_n),
             "pred_pts":  round(xi["predicted_pts"].sum(), 2),
+            "xpts":      xpts_total,
             "combined":  round(xi["combined_score"].sum(), 2),
         })
     return sorted(results, key=lambda x: x["combined"], reverse=True)
@@ -487,17 +568,14 @@ def score_all_formations(squad_df: pd.DataFrame) -> list:
 def _prob_weighted_bench_score(bench_df: pd.DataFrame,
                                 squad_df: pd.DataFrame) -> float:
     """
-    Improvement #3: Probability-weighted auto-substitution score.
+    Probability-weighted auto-substitution score.
 
-    Expected bench contribution = sum over bench players of:
-      P(a starter needs replacing) * bench_player_predicted_pts
-      weighted by bench slot position (earlier = more likely to sub in)
+    v4 fix: uses p_plays_full (Phase 1 v5 continuous rotation probability)
+    for starters instead of chance_of_playing (raw FPL categorical).
+    Falls back to chance_of_playing if p_plays_full absent.
 
-    P(starter needs replacing) is derived from chance_of_playing
-    of the starters — if starters have low chance_of_playing,
-    bench players are more valuable.
-
-    avg_injury_prob = mean(1 - chance_of_playing/100) across starters
+    E[bench contribution] = sum over bench slots of:
+      P(auto-sub needed) * (1/(slot+1)) * bench_xpts
     """
     if bench_df.empty or squad_df.empty:
         return 0.0
@@ -506,20 +584,24 @@ def _prob_weighted_bench_score(bench_df: pd.DataFrame,
     if bench_outfield.empty:
         return 0.0
 
-    # Estimate average probability a starter needs replacing
-    if "chance_of_playing" in squad_df.columns:
-        avg_injury_prob = (
-            1 - squad_df["chance_of_playing"].fillna(100) / 100
-        ).mean()
+    # v4: prefer p_plays_full for starters
+    if "p_plays_full" in squad_df.columns:
+        avg_injury_prob = float(
+            (1.0 - squad_df["p_plays_full"].fillna(1.0)).mean()
+        )
+    elif "chance_of_playing" in squad_df.columns:
+        avg_injury_prob = float(
+            (1.0 - squad_df["chance_of_playing"].fillna(100) / 100.0).mean()
+        )
     else:
-        avg_injury_prob = 0.05  # default 5% if not available
+        avg_injury_prob = 0.05   # 5% default
 
     score = 0.0
-    for i, (_, bench_player) in enumerate(bench_outfield.iterrows()):
-        # Earlier bench slot = more likely to be called upon
+    for i, (_, bp) in enumerate(bench_outfield.iterrows()):
         slot_weight = 1.0 / (i + 1)
-        bench_pts   = bench_player.get("predicted_pts", 0)
-        score      += avg_injury_prob * slot_weight * bench_pts
+        # Use expected_pts for bench player value (v4)
+        bench_pts = float(bp.get("expected_pts", bp.get("predicted_pts", 0)))
+        score    += avg_injury_prob * slot_weight * bench_pts
 
     return round(score, 2)
 
@@ -531,21 +613,36 @@ def _prob_weighted_bench_score(bench_df: pd.DataFrame,
 def compute_score_range(starting_xi: pd.DataFrame,
                          rmse_map: dict) -> tuple:
     """
-    Improvement #8: Expected XI score range.
+    Expected XI score confidence interval.
 
-    Lower bound = sum(predicted - RMSE) per player
-    Upper bound = sum(predicted + RMSE) per player
-    These approximate a 68% confidence interval based on
-    position-specific model error.
+    v4 fix: uses pts_low / pts_high (Q10/Q90 from Phase 1 v5 quantile
+    regression) when available — these are player-specific and asymmetric.
+    Falls back to symmetric RMSE ± if quantile columns absent.
+
+    Returns (lower_bound, upper_bound) as a 68%/80% CI approximation.
     """
+    has_quantiles = (
+        "pts_low"  in starting_xi.columns and
+        "pts_high" in starting_xi.columns
+    )
+
     lower = 0.0
     upper = 0.0
+
     for _, row in starting_xi.iterrows():
-        pts  = row.get("predicted_pts", 0)
-        rmse = rmse_map.get(row["position"], 2.0)
-        lower += max(0, pts - rmse)
-        upper += pts + rmse
-    return round(lower, 1), round(upper, 1)
+        pts = float(row.get("predicted_pts", 0))
+        if has_quantiles:
+            lo = float(row.get("pts_low",  max(0, pts - rmse_map.get(row["position"], 2.0))))
+            hi = float(row.get("pts_high", pts + rmse_map.get(row["position"], 2.0)))
+        else:
+            rmse = rmse_map.get(row["position"], 2.0)
+            lo   = max(0.0, pts - rmse)
+            hi   = pts + rmse
+        lower += lo
+        upper += hi
+
+    ci_label = "Q10–Q90" if has_quantiles else "68% CI (RMSE)"
+    return round(lower, 1), round(upper, 1), ci_label
 
 
 # ─────────────────────────────────────────
@@ -557,10 +654,8 @@ def get_post_transfer_xi(my_team_enriched: pd.DataFrame,
                           player_in_data: pd.Series,
                           triple_captain: bool = False) -> dict:
     """
-    Improvement #6: Show optimal XI after a transfer is applied.
-
-    Uses player_id for matching (not last-name string matching)
-    to avoid collisions when two players share a surname.
+    Show optimal XI after applying a transfer.
+    Uses player_id matching to avoid surname collision bugs.
     """
     simulated = my_team_enriched[
         my_team_enriched["player_id"] != player_out_id
@@ -576,6 +671,67 @@ def get_post_transfer_xi(my_team_enriched: pd.DataFrame,
 # 7. GW-BY-GW XI RECOMMENDATION
 # ─────────────────────────────────────────
 
+def _gw_specific_score(row: pd.Series, gw: int, current_gw: int) -> float:
+    """
+    Compute a GW-specific player score using per-GW fixture difficulty.
+
+    v4 fix: replaces the wrong approach of using combined_score (which
+    reflects GW+1 fixture run) for all future GWs. For GW+N we use:
+      gw_xscore = expected_pts * (6 - gw_difficulty) / 3.0
+    where gw_difficulty comes from the gw{N}_difficulty column stored
+    by Phase 2 build_player_fixture_scores.
+
+    The /3.0 normalises to a comparable scale with combined_score.
+    Falls back to combined_score when the column is absent (e.g. blanks).
+    """
+    gw_col    = f"gw{gw}_difficulty"
+    gw_blank  = row.get(f"gw{gw}_opponent", "") == "BLANK"
+    if gw_blank:
+        return 0.0
+
+    diff = float(row.get(gw_col, row.get("avg_difficulty", 3.0)))
+    xpts = _xpts_base(row)
+    return round(xpts * (6.0 - diff) / 3.0, 3)
+
+
+def _gw_captain_score(row: pd.Series,
+                       gw: int,
+                       current_gw: int,
+                       triple_captain: bool = False) -> float:
+    """
+    Item 4 (v5): GW-specific captain score with fixture_trend decay.
+
+    For future GWs, a player's captain EV is penalised if their fixtures
+    are trending harder (positive fixture_trend = getting tougher).
+
+    Formula:
+      gw_cap_ev = base_captain_ev - max(0, fixture_trend * gw_offset * 0.3)
+
+    where gw_offset = gw - current_gw (1 for next GW, 2 for GW+2, etc.)
+    and the 0.3 factor is a conservative penalty weight.
+
+    Blank GW players return 0.0.
+    """
+    if str(row.get(f"gw{gw}_opponent", "")) == "BLANK":
+        return 0.0
+
+    gw_offset = gw - current_gw
+
+    # Base: use captain_ev if available, else compute from xpts
+    if "captain_ev" in row.index and not pd.isna(row.get("captain_ev")):
+        base_ev = float(row["captain_ev"])
+        if triple_captain:
+            base_ev *= 1.5   # captain_ev is already 2x; 1.5x gives 3x
+    else:
+        base_ev = xpts_captain_score(row, triple_captain)
+
+    # fixture_trend decay: positive trend = harder fixtures = lower captain value
+    trend   = float(row.get("fixture_trend", 0) or 0)
+    penalty = max(0.0, trend * gw_offset * 0.3)
+
+    return round(max(0.0, base_ev - penalty), 3)
+
+
 def recommend_xi_multi_gw(my_team_enriched: pd.DataFrame,
                             bootstrap: dict,
                             fixtures_df: pd.DataFrame,
@@ -583,12 +739,12 @@ def recommend_xi_multi_gw(my_team_enriched: pd.DataFrame,
                             n_gws: int = 3,
                             triple_captain: bool = False) -> list:
     """
-    Improvement #9: Optimal XI recommendation for next N gameweeks.
+    Optimal XI recommendation for next N gameweeks.
 
-    For each GW, re-scores players based on that week's fixture
-    then runs XI optimizer. Highlights where formation should change.
-
-    Returns list of result dicts, one per GW.
+    v4 fix: for each GW computes a GW-specific score using
+    expected_pts * (6 - gw_difficulty) rather than reusing
+    the GW+1 combined_score for all future GWs. Blank/double
+    GW status per player is derived from gw{N}_opponent column.
     """
     results = []
 
@@ -596,28 +752,61 @@ def recommend_xi_multi_gw(my_team_enriched: pd.DataFrame,
         gw = current_gw + gw_offset
         log.info(f"Computing optimal XI for GW{gw}...")
 
-        gw_fixtures  = fixtures_df[fixtures_df["event"] == gw]
-        gw_diff_map  = {}
-        gw_blank_map = {}
-
-        for team_id in my_team_enriched["team_id"].unique():
-            team_fix = gw_fixtures[
-                (gw_fixtures["team_h"] == team_id) |
-                (gw_fixtures["team_a"] == team_id)
-            ]
-            if team_fix.empty:
-                gw_blank_map[team_id] = True
-                gw_diff_map[team_id]  = 6
-            else:
-                row = team_fix.iloc[0]
-                gw_diff_map[team_id]  = row["team_h_difficulty"] \
-                                        if row["team_h"] == team_id \
-                                        else row["team_a_difficulty"]
-                gw_blank_map[team_id] = False
-
         gw_squad = my_team_enriched.copy()
-        gw_squad["is_blank_next_gw"] = gw_squad["team_id"].map(gw_blank_map).fillna(False)
-        gw_squad["difficulty"]        = gw_squad["team_id"].map(gw_diff_map).fillna(3)
+
+        # Update blank status from Phase 2 stored per-GW columns
+        gw_opp_col   = f"gw{gw}_opponent"
+        gw_diff_col  = f"gw{gw}_difficulty"
+        gw_home_col  = f"gw{gw}_home"
+
+        if gw_opp_col in gw_squad.columns:
+            gw_squad["is_blank_next_gw"] = (
+                gw_squad[gw_opp_col].astype(str) == "BLANK"
+            )
+            # v4: compute GW-specific score as ILP objective
+            gw_squad["_gw_score"] = gw_squad.apply(
+                lambda r: _gw_specific_score(r, gw, current_gw), axis=1
+            )
+            # Temporarily override combined_score for this GW's ILP
+            gw_squad["combined_score"] = gw_squad["_gw_score"]
+            # v5 Item 4: inject GW-adjusted captain_ev with fixture_trend decay
+            gw_squad["captain_ev"] = gw_squad.apply(
+                lambda r: _gw_captain_score(r, gw, current_gw, triple_captain),
+                axis=1
+            )
+        else:
+            # Fallback: use fixture data from live fixtures_df
+            gw_fixtures  = fixtures_df[fixtures_df["event"] == gw]
+            gw_blank_map = {}
+            gw_diff_map  = {}
+            for team_id in gw_squad["team_id"].unique():
+                team_fix = gw_fixtures[
+                    (gw_fixtures["team_h"] == team_id) |
+                    (gw_fixtures["team_a"] == team_id)
+                ]
+                if team_fix.empty:
+                    gw_blank_map[team_id] = True
+                    gw_diff_map[team_id]  = 6
+                else:
+                    r = team_fix.iloc[0]
+                    gw_diff_map[team_id]  = float(
+                        r["team_h_difficulty"] if r["team_h"] == team_id
+                        else r["team_a_difficulty"]
+                    )
+                    gw_blank_map[team_id] = False
+            gw_squad["is_blank_next_gw"] = (
+                gw_squad["team_id"].map(gw_blank_map).fillna(False)
+            )
+            gw_squad["combined_score"] = gw_squad.apply(
+                lambda r: 0.0 if r["is_blank_next_gw"] else
+                _xpts_base(r) * (6.0 - gw_diff_map.get(r["team_id"], 3.0)) / 3.0,
+                axis=1
+            )
+            # Also inject trend-adjusted captain_ev for the fallback path
+            gw_squad["captain_ev"] = gw_squad.apply(
+                lambda r: _gw_captain_score(r, gw, current_gw, triple_captain),
+                axis=1
+            )
 
         result = optimize_xi_ilp(gw_squad, triple_captain=triple_captain)
         if result:
@@ -628,30 +817,113 @@ def recommend_xi_multi_gw(my_team_enriched: pd.DataFrame,
 
 
 # ─────────────────────────────────────────
-# 8. DISPLAY HELPERS
+# 8. PIPELINE HELPER
 # ─────────────────────────────────────────
 
-def print_formation_comparison(squad_df: pd.DataFrame):
-    """Print all formations ranked by combined score."""
+def _load_or_train_models(history_df: pd.DataFrame,
+                           refresh: bool) -> dict:
+    """
+    Load models from fpl_model.pkl if <12h old, else retrain.
+    Avoids 30–60s retraining every run when Phase 1/2/3 already ran.
+    """
+    pkl_path = "fpl_model.pkl"
+    if not refresh and os.path.exists(pkl_path):
+        age_h = (
+            pd.Timestamp.now() -
+            pd.Timestamp.fromtimestamp(os.path.getmtime(pkl_path))
+        ).total_seconds() / 3600
+        if age_h < 12:
+            try:
+                with open(pkl_path, "rb") as f:
+                    saved = pickle.load(f)
+                models = saved.get("models", {})
+                if models:
+                    log.info(f"✅ Loaded models from {pkl_path} (age {age_h:.1f}h).")
+                    return models
+            except Exception as e:
+                log.warning(f"Could not load {pkl_path}: {e} — retraining.")
+    log.info("🤖 Training position-specific models...")
+    models = train_models(history_df)
+    with open(pkl_path, "wb") as f:
+        pickle.dump({"models": models, "features": FEATURE_COLS}, f)
+    log.info(f"💾 Models saved → {pkl_path}")
+    return models
+
+
+# ─────────────────────────────────────────
+# 9. DISPLAY HELPERS
+# ─────────────────────────────────────────
+
+def print_formation_comparison(squad_df: pd.DataFrame) -> None:
+    """Print all formations ranked by combined score. v4: shows xPts column."""
     results = score_all_formations(squad_df)
+    has_xpts = any("xpts" in r for r in results)
     print(f"\n{'=' * 75}")
     print("  FORMATION COMPARISON")
     print(f"{'=' * 75}")
-    print(f"  {'Formation':<12}  {'Pred Pts':>10}  {'Combined':>10}")
-    print(f"  {'-' * 36}")
+    if has_xpts:
+        print(f"  {'Formation':<12}  {'xPts':>8}  {'Pred Pts':>10}  {'Combined':>10}")
+    else:
+        print(f"  {'Formation':<12}  {'Pred Pts':>10}  {'Combined':>10}")
+    print(f"  {'-' * 44}")
     for i, r in enumerate(results):
         marker = "  <- Optimal" if i == 0 else ""
-        print(f"  {r['formation']:<12}  {r['pred_pts']:>10}  {r['combined']:>10}{marker}")
+        if has_xpts:
+            print(f"  {r['formation']:<12}  {r.get('xpts', r['pred_pts']):>8}  "
+                  f"{r['pred_pts']:>10}  {r['combined']:>10}{marker}")
+        else:
+            print(f"  {r['formation']:<12}  {r['pred_pts']:>10}  {r['combined']:>10}{marker}")
 
 
-def print_starting_xi(result: dict, current_gw: int, rmse_map: dict):
-    """Print starting XI with confidence range and chip notes."""
+def print_captain_mc(mc_results: list, triple_captain: bool = False) -> None:
+    """
+    Item 2 (v5): Display Monte Carlo captain analysis — win_prob + top-3.
+
+    Shows the probability each player is the optimal captain choice across
+    1,000 simulations sampled from pts_low/pts_high quantile distributions.
+    """
+    if not mc_results:
+        return
+
+    tc_note = "  [TRIPLE CAPTAIN — 3x]" if triple_captain else ""
+    print(f"\n{'=' * 75}")
+    print(f"  CAPTAIN ANALYSIS — Monte Carlo (1,000 simulations){tc_note}")
+    print(f"  Simulates from pts_low–pts_high distribution to find optimal captain")
+    print(f"{'=' * 75}")
+    print(f"  {'Player':<28} {'Win%':>6} {'Cap EV':>8} {'vs others':>10} "
+          f"{'Run':<14} {'Home'}")
+    print(f"  {'-' * 75}")
+
+    for i, r in enumerate(mc_results[:5]):
+        rank_label = ["★ Captain", "  Vice Cap", "  3rd opt ", "  4th opt ", "  5th opt "][i]
+        home_str   = "H" if r.get("is_home") else "A"
+        dgw_str    = " (DGW)" if r.get("double_gws", 0) > 0 else ""
+        gain_str   = f"{r['expected_captain_gain']:+.2f}"
+        print(
+            f"  {rank_label}  {str(r['player_name']):<28}"
+            f"  {r['win_prob']*100:>5.1f}%"
+            f"  {r['captain_ev']:>7.1f}"
+            f"  {gain_str:>10}"
+            f"  {r['fixture_run']:<14}"
+            f"  {home_str}{dgw_str}"
+        )
+
+    top = mc_results[0]
+    print(
+        f"\n  Best captain by simulation: {top['player_name']}"
+        f"  (wins captaincy decision {top['win_prob']*100:.1f}% of the time)"
+    )
+    print(f"  expected_captain_gain = average pts gained vs captaining someone else: "
+          f"{top['expected_captain_gain']:+.2f}")
+
+
+def print_starting_xi(result: dict, current_gw: int, rmse_map: dict) -> None:
+    """Print starting XI with CI range and chip notes. v4: uses pts_low/pts_high CI."""
     xi  = result["starting_xi"]
     cap = result["captain"]
     vc  = result["vice_captain"]
 
     gw_label = result.get("gw", current_gw + 1)
-
     gks  = xi[xi["position"] == "Goalkeeper"]
     defs = xi[xi["position"] == "Defender"]
     mids = xi[xi["position"] == "Midfielder"]
@@ -659,26 +931,30 @@ def print_starting_xi(result: dict, current_gw: int, rmse_map: dict):
 
     def fmt(row):
         name  = str(row["player_name"]).split()[-1]
-        pts   = row["predicted_pts"]
+        # Show expected_pts if available, else predicted_pts
+        pts   = float(row.get("expected_pts", row["predicted_pts"]))
         blank = "*" if row.get("is_blank_next_gw", False) else ""
-        if row["player_id"] == cap["player_id"]:
-            tag = "(C)"
-        elif row["player_id"] == vc["player_id"]:
-            tag = "(V)"
-        else:
-            tag = ""
-        return f"{name}{tag}{blank}({pts})"
+        if row["player_id"] == cap["player_id"]:   tag = "(C)"
+        elif row["player_id"] == vc["player_id"]:  tag = "(V)"
+        else:                                        tag = ""
+        return f"{name}{tag}{blank}({pts:.1f})"
 
     def print_row(players, label):
         print(f"    {label:<4}  " +
               "    ".join(fmt(r) for _, r in players.iterrows()))
 
-    # Confidence range
-    lo, hi = compute_score_range(xi, rmse_map)
+    # v4: use pts_low/pts_high when available
+    lo, hi, ci_label = compute_score_range(xi, rmse_map)
 
     method_note = f"  [{result.get('method', 'ILP')}]"
     bb_note     = "  [BENCH BOOST — all 15 score]" if result.get("bench_boost") else ""
     tc_note     = "  [TRIPLE CAPTAIN — 3x]" if result.get("triple_captain") else ""
+
+    # xPts total
+    xpts_total = round(
+        xi["expected_pts"].sum() if "expected_pts" in xi.columns
+        else xi["predicted_pts"].sum(), 2
+    )
 
     print(f"\n{'=' * 75}")
     print(
@@ -686,10 +962,11 @@ def print_starting_xi(result: dict, current_gw: int, rmse_map: dict):
         f"Formation: {result['formation']}{method_note}{bb_note}{tc_note}"
     )
     print(
-        f"  Predicted Pts: {result['total_predicted_pts']}"
-        f"  |  Range: {lo} – {hi} pts (68% CI)"
+        f"  xPts: {xpts_total}"
+        f"  |  Pred: {result['total_predicted_pts']}"
+        f"  |  Range: {lo}–{hi} ({ci_label})"
     )
-    print(f"  (C)=Captain  (V)=Vice Captain  *=Blank")
+    print(f"  (C)=Captain  (V)=Vice Captain  *=Blank  xPts=rotation-adjusted")
     print(f"{'=' * 75}")
     print(f"\n    {'─' * 65}")
     print_row(gks,  "GK ")
@@ -701,81 +978,94 @@ def print_starting_xi(result: dict, current_gw: int, rmse_map: dict):
     print_row(fwds, "FWD")
     print(f"    {'─' * 65}")
 
-    # Detail table
-    print(f"\n  {'Player':<28} {'Pos':<12} {'Pred':>6} {'xPts':>6} "
-          f"{'Run':<14} {'Diff':>5} {'H/A':>4}")
-    print(f"  {'-' * 72}")
-    for _, row in xi.sort_values("predicted_pts", ascending=False).iterrows():
+    # Detail table — v4: show expected_pts, captain_ev
+    has_cap_ev = "captain_ev" in xi.columns
+    print(f"\n  {'Player':<28} {'Pos':<12} {'xPts':>6} {'Pred':>6} {'Cap EV':>7} "
+          f"{'Run':<14} {'Diff':>5}")
+    print(f"  {'-' * 78}")
+    for _, row in xi.sort_values("combined_score", ascending=False).iterrows():
         tag   = " (C)" if row["player_id"] == cap["player_id"] else \
                 " (V)" if row["player_id"] == vc["player_id"] else "    "
         blank = " *" if row.get("is_blank_next_gw", False) else "  "
-        xpts  = round(row.get("predicted_pts", 0) *
-                      (1 + float(row.get("roll3_threat", 0) or 0) / 100), 2)
+        xpts  = round(_xpts_base(row) * (1 + float(row.get("roll3_threat", 0) or 0) / 100), 2)
+        cap_ev_val = f"{float(row.get('captain_ev', xpts*2)):.1f}" if has_cap_ev else "—"
         print(
             f"  {str(row['player_name']) + tag:<28}"
             f"  {row['position']:<12}"
+            f"  {xpts:>6.2f}"
             f"  {row['predicted_pts']:>6}"
-            f"  {xpts:>6}"
+            f"  {cap_ev_val:>7}"
             f"  {row.get('fixture_run_label', '?'):<14}"
             f"  {row.get('difficulty', '-'):>5}"
-            f"  {'H' if row.get('is_home') else 'A':>4}"
             f"{blank}"
         )
 
     # Captain summary
-    tc_mult = 3 if result.get("triple_captain") else 2
+    tc_mult  = 3 if result.get("triple_captain") else 2
     dgw_note = " (DGW)" if cap.get("double_gws", 0) > 0 else ""
-    vc_chance = vc.get("chance_of_playing", 100)
+    cap_xpts = round(_xpts_base(cap), 2)
+    cap_ev   = float(cap.get("captain_ev", cap_xpts * tc_mult))
+
+    # VC reliability
+    vc_pfull  = vc.get("p_plays_full")   # v5 fix: was cap.get (wrong variable)
+    vc_rel    = float(vc_pfull) if vc_pfull is not None and not pd.isna(vc_pfull) \
+                else float(vc.get("chance_of_playing", 100)) / 100.0
+    vc_rel_pct = round(vc_rel * 100)
+
     print(
-        f"\n  Captain:      {cap['player_name']} — {cap['predicted_pts']} pts"
-        f"  (scores {round(cap['predicted_pts']*tc_mult, 2)} if captained){dgw_note}"
+        f"\n  Captain:      {cap['player_name']}"
+        f"  xPts:{cap_xpts}  Cap EV:{cap_ev:.1f}"
+        f"  (×{tc_mult} = {round(cap_xpts * tc_mult, 2)}){dgw_note}"
     )
     print(
-        f"  Vice Captain: {vc['player_name']} — {vc['predicted_pts']} pts"
-        f"  (Chance of playing: {vc_chance}%  ← backup captain reliability)"
+        f"  Vice Captain: {vc['player_name']}"
+        f"  xPts:{round(_xpts_base(vc), 2)}"
+        f"  Reliability:{vc_rel_pct}%  ← backup captain safety"
     )
 
 
-def print_bench(result: dict):
-    """Print bench with auto-sub notes."""
+def print_bench(result: dict) -> None:
+    """Print bench with auto-sub notes. v4: shows expected_pts."""
     bench = result["bench"]
     if bench.empty:
         return
 
     print(f"\n{'=' * 75}")
-    print(
-        f"  BENCH ORDER  "
-        f"(Auto-sub score: {result['bench_auto_sub_score']})"
-    )
+    print(f"  BENCH ORDER  (Expected auto-sub contribution: {result['bench_auto_sub_score']} pts)")
     print(f"{'=' * 75}")
     print(f"  {'#':<3} {'Player':<28} {'Pos':<12} {'Price':>5} "
-          f"{'Pred':>6} {'Run':<14} {'Note'}")
-    print(f"  {'-' * 75}")
+          f"{'xPts':>6} {'Pred':>6} {'Run':<14} {'Note'}")
+    print(f"  {'-' * 80}")
 
     for i, (_, row) in enumerate(bench.iterrows(), 1):
         if row["position"] == "Goalkeeper":
             note = "Emergency GK"
         elif i == 1:
-            note = "First sub"
+            note = "First sub ★"
         elif row.get("is_blank_next_gw", False):
             note = "Blank GW"
         else:
             note = ""
+        xpts_val = round(_xpts_base(row), 2)
         print(
             f"  {i:<3} {str(row['player_name']):<28}"
             f"  {row['position']:<12}"
             f"  £{row['price']:>4.1f}"
+            f"  {xpts_val:>6.2f}"
             f"  {row['predicted_pts']:>6}"
             f"  {row.get('fixture_run_label', '?'):<14}"
             f"  {note}"
         )
 
 
-def flag_injury_risks(squad_df: pd.DataFrame, bootstrap: dict):
+def flag_injury_risks(squad_df: pd.DataFrame, bootstrap: dict) -> None:
     """Flag players with less than 100% chance of playing."""
     players_raw = bootstrap["elements"]
-    risk_map    = {p["id"]: p.get("chance_of_playing_next_round") for p in players_raw}
-    risks       = []
+    risk_map    = {
+        p["id"]: p.get("chance_of_playing_next_round")
+        for p in players_raw
+    }
+    risks = []
     for _, row in squad_df.iterrows():
         chance = risk_map.get(int(row["player_id"]))
         if chance is not None and chance < 100:
@@ -792,12 +1082,11 @@ def flag_injury_risks(squad_df: pd.DataFrame, bootstrap: dict):
         print("\n  All squad players have 100% chance of playing.")
 
 
-def print_multi_gw_xi(gw_results: list):
+def print_multi_gw_xi(gw_results: list) -> None:
     """Print GW-by-GW XI summary highlighting formation changes."""
     print(f"\n{'=' * 75}")
     print("  GW-BY-GW XI RECOMMENDATION (Next 3 GWs)")
     print(f"{'=' * 75}")
-
     prev_formation = None
     for result in gw_results:
         if result is None:
@@ -807,14 +1096,13 @@ def print_multi_gw_xi(gw_results: list):
         pts       = result["total_predicted_pts"]
         cap       = result["captain"]["player_name"]
         vc        = result["vice_captain"]["player_name"]
-        changed   = " <- FORMATION CHANGE" if formation != prev_formation \
+        changed   = " ← FORMATION CHANGE" if formation != prev_formation \
                     and prev_formation is not None else ""
         print(
             f"\n  GW{gw}: {formation}{changed}"
             f"  |  Pred: {pts} pts"
-            f"  |  Captain: {cap}  |  VC: {vc}"
+            f"  |  Captain: {cap}  VC: {vc}"
         )
-        # Show XI compactly
         xi = result["starting_xi"]
         for pos in ["Goalkeeper", "Defender", "Midfielder", "Forward"]:
             pos_players = xi[xi["position"] == pos]
@@ -829,46 +1117,61 @@ def print_multi_gw_xi(gw_results: list):
 
 def print_post_transfer_xi(before: dict, after: dict,
                              player_out: str, player_in: str,
-                             current_gw: int, rmse_map: dict):
-    """Print before/after XI comparison for top transfer."""
+                             current_gw: int, rmse_map: dict) -> None:
+    """Print before/after XI comparison for top transfer. v5: shows bench delta."""
     print(f"\n{'=' * 75}")
     print(f"  TRANSFER IMPACT: OUT {player_out} -> IN {player_in}")
     print(f"{'=' * 75}")
+
+    lo_b, hi_b, ci_b = compute_score_range(before["starting_xi"], rmse_map)
+    lo_a, hi_a, ci_a = compute_score_range(after["starting_xi"],  rmse_map)
+
+    bench_before = before.get("bench_auto_sub_score", 0.0)
+    bench_after  = after.get("bench_auto_sub_score",  0.0)
+    bench_delta  = round(bench_after - bench_before, 2)
+
     print(
         f"\n  BEFORE: Formation {before['formation']}"
         f"  |  Pred: {before['total_predicted_pts']} pts"
+        f"  |  Range: {lo_b}–{hi_b}"
         f"  |  Captain: {before['captain']['player_name']}"
+        f"  |  Bench sub EV: {bench_before}"
     )
-    lo_b, hi_b = compute_score_range(before["starting_xi"], rmse_map)
-    print(f"          Range: {lo_b} – {hi_b} pts")
-
     print(
-        f"\n  AFTER:  Formation {after['formation']}"
+        f"  AFTER:  Formation {after['formation']}"
         f"  |  Pred: {after['total_predicted_pts']} pts"
+        f"  |  Range: {lo_a}–{hi_a}"
         f"  |  Captain: {after['captain']['player_name']}"
+        f"  |  Bench sub EV: {bench_after}"
     )
-    lo_a, hi_a = compute_score_range(after["starting_xi"], rmse_map)
-    print(f"          Range: {lo_a} – {hi_a} pts")
-
-    delta = round(after["total_predicted_pts"] - before["total_predicted_pts"], 2)
-    print(
-        f"\n  Net XI improvement from transfer: {delta:+.2f} pts predicted"
-    )
+    xi_delta    = round(after["total_predicted_pts"] - before["total_predicted_pts"], 2)
+    bench_note  = f"  Bench sub EV: {bench_delta:+.2f}"
+    print(f"\n  Net XI improvement:  {xi_delta:+.2f} predicted pts")
+    print(f"  Bench EV change:     {bench_delta:+.2f} expected bench contribution")
+    total_delta = round(xi_delta + bench_delta, 2)
+    print(f"  Total expected gain: {total_delta:+.2f} pts  (XI + bench combined)")
 
 
 # ─────────────────────────────────────────
-# 9. FULL PHASE 4 PIPELINE
+# 10. FULL PHASE 4 PIPELINE
 # ─────────────────────────────────────────
 
 def run_phase4(team_id: int = TEAM_ID,
                max_players: int = None,
                refresh: bool = False):
-    """Full Phase 4 pipeline with all improvements."""
+    """
+    Full Phase 4 v4 pipeline.
+
+    v4: applies full Phase 1 v5 predictions (component blend,
+    expected_pts, price predictions, cs_probability_map).
+    All XI selection, captain, VC, and bench decisions now use
+    rotation-risk-adjusted expected_pts rather than raw predicted_pts.
+    """
     log.info("=" * 75)
-    log.info("  FPL AI ASSISTANT — Phase 4: Starting XI Optimizer (v3)")
+    log.info("  FPL AI ASSISTANT — Phase 4: Starting XI Optimizer (v5)")
     log.info("=" * 75)
 
-    # ── Fetch ──────────────────────────────────────────
+    # ── Fetch ──────────────────────────────────────────────────────
     log.info("Fetching bootstrap & fixtures...")
     bootstrap   = fetch_bootstrap()
     fixtures_df = fetch_fixtures()
@@ -889,81 +1192,87 @@ def run_phase4(team_id: int = TEAM_ID,
     transfer_status = transfer_info["transfer_status"]
     log.info(f"Bank: £{bank_balance:.1f}M  |  {transfer_status}")
 
-    # ── History + models ───────────────────────────────
+    # ── History + models (fix 2: load pkl if fresh) ────────────────
     log.info("Loading player history...")
     history_df = build_player_history_df(
         bootstrap, max_players=max_players, refresh=refresh
     )
-
-    log.info("Training position-specific models...")
-    models = train_models(history_df)
+    models   = _load_or_train_models(history_df, refresh)
     rmse_map = get_rmse_from_models(models)
 
-    with open("fpl_model.pkl", "wb") as f:
-        pickle.dump({"models": models, "features": FEATURE_COLS}, f)
-
-    # ── Predict ────────────────────────────────────────
+    # ── Phase 1 v5 full prediction pipeline (fix 1) ───────────────
     log.info(f"Predicting GW{current_gw+1} scores...")
     pred_df = build_current_features(
         bootstrap, fixtures_df, history_df,
-        models, current_gw,
-        my_player_ids=my_player_ids
+        models, current_gw, my_player_ids=my_player_ids
     )
+    log.info("🧩 Component models...")
+    component_models = train_component_models(history_df)
+    pred_df          = predict_component_pts(component_models, pred_df)
+    direct_w         = 1.0 - COMPONENT_BLEND_WEIGHT
+    pred_df["predicted_pts"] = (
+        direct_w * pred_df["predicted_pts"] +
+        COMPONENT_BLEND_WEIGHT * pred_df["pts_from_components"]
+    ).round(2)
+    pred_df     = compute_expected_pts(pred_df)
+    price_model = train_price_model(history_df)
+    pred_df     = add_price_predictions(price_model, pred_df)
 
-    # ── Phase 2 context ────────────────────────────────
+    # ── Phase 2 context (fix 10: pass cs_prob_map) ────────────────
     log.info("Building context maps...")
     custom_diff     = build_custom_difficulty(history_df, bootstrap)
     team_form_map   = build_team_form(history_df, bootstrap)
     opp_scoring_map = build_opponent_scoring_map(history_df)
+    cs_prob_map     = build_cs_probability_map(history_df)
     chip_info       = build_chip_status(team_id, bootstrap, fixtures_df, current_gw)
 
-    log.info(f"Building fixture run (next {FIXTURE_LOOKAHEAD} GWs)...")
+    log.info(f"Building fixture run ({FIXTURE_LOOKAHEAD} GWs)...")
     fixture_run_df = build_fixture_run(
         bootstrap, fixtures_df, current_gw,
         custom_difficulty=custom_diff,
-        gw_lookahead=FIXTURE_LOOKAHEAD
+        gw_lookahead=FIXTURE_LOOKAHEAD,
     )
     enriched_df = build_player_fixture_scores(
         pred_df, fixture_run_df, current_gw,
         team_form_map, opp_scoring_map,
-        FIXTURE_LOOKAHEAD
+        FIXTURE_LOOKAHEAD,
+        cs_probability_map=cs_prob_map,   # fix 10
     )
 
     my_team_enriched = enriched_df[enriched_df["player_id"].isin(my_player_ids)].copy()
     other_enriched   = enriched_df[~enriched_df["player_id"].isin(my_player_ids)].copy()
 
-    # ── Chip detection ─────────────────────────────────
+    # ── Chip detection ─────────────────────────────────────────────
     available_chips = chip_info.get("available_chips", [])
     triple_captain  = "Triple Captain" in available_chips
     bench_boost     = "Bench Boost" in available_chips
 
     if triple_captain:
         log.info("Triple Captain available — applying 3x captain scoring.")
-        print("\n  Triple Captain chip available — captain scored at 3x!")
+        print("\n  ⭐ Triple Captain chip available — captain scored at 3x!")
     if bench_boost:
         log.info("Bench Boost available — will show Bench Boost mode.")
-        print("\n  Bench Boost chip available — will show optimised 15-player squad!")
+        print("\n  📈 Bench Boost chip available — all 15 players score!")
 
-    # ── Squad validation ───────────────────────────────
+    # ── Squad validation ───────────────────────────────────────────
     violations = validate_squad(my_team_enriched)
     if violations:
         print("\n  Squad violations:")
-        for v in violations:
-            print(f"    - {v}")
+        for v in violations: print(f"    - {v}")
     else:
         print("\n  Squad passes all FPL rules.")
 
-    # ── Injury risks ───────────────────────────────────
+    # ── Injury risks ───────────────────────────────────────────────
     flag_injury_risks(my_team_enriched, bootstrap)
 
-    # ── Formation comparison ───────────────────────────
+    # ── Formation comparison ───────────────────────────────────────
     print_formation_comparison(my_team_enriched)
 
-    # ── Optimal starting XI ────────────────────────────
+    # ── Optimal starting XI ────────────────────────────────────────
     result = optimize_xi_ilp(
         my_team_enriched,
         triple_captain=triple_captain,
-        bench_boost=False
+        bench_boost=False,
     )
 
     if not result:
@@ -972,38 +1281,44 @@ def run_phase4(team_id: int = TEAM_ID,
         return enriched_df, my_team_enriched, None
 
     print_starting_xi(result, current_gw, rmse_map)
+
+    # Item 2 (v5): Monte Carlo captain analysis — shows win_prob + top-3
+    log.info("🎲 Running Monte Carlo captain analysis...")
+    mc_results = run_monte_carlo_captain(my_team_enriched)
+    print_captain_mc(mc_results, triple_captain=triple_captain)
+
     print_bench(result)
 
-    # ── Bench Boost mode (if available) ───────────────
+    # ── Bench Boost mode (if available) ───────────────────────────
     if bench_boost:
         bb_result = optimize_xi_ilp(
             my_team_enriched,
             triple_captain=triple_captain,
-            bench_boost=True
+            bench_boost=True,
         )
         print(f"\n{'=' * 75}")
         print("  BENCH BOOST MODE — Optimal Captain for All 15 Players")
         print(f"{'=' * 75}")
         print_starting_xi(bb_result, current_gw, rmse_map)
 
-    # ── GW-by-GW XI recommendation ─────────────────────
+    # ── GW-by-GW XI recommendation ─────────────────────────────────
     gw_results = recommend_xi_multi_gw(
         my_team_enriched, bootstrap,
         fixtures_df, current_gw, n_gws=3,
-        triple_captain=triple_captain
+        triple_captain=triple_captain,
     )
     print_multi_gw_xi(gw_results)
 
-    # ── ILP optimal transfers ──────────────────────────
+    # ── ILP optimal transfers ──────────────────────────────────────
     print(f"\n{'=' * 75}")
-    print("  OPTIMAL 1-TRANSFER")
+    print(f"  OPTIMAL 1-TRANSFER (ILP{'  — PuLP' if PULP_AVAILABLE else '  — Greedy'})")
     print(f"{'=' * 75}")
     ilp_result_1 = get_ilp_optimal_transfers(
         my_team_enriched, other_enriched, bank_balance, n_transfers=1
     )
     print_ilp_result(ilp_result_1, "1-Transfer")
 
-    # ── Post-transfer XI preview ───────────────────────
+    # ── Post-transfer XI preview ───────────────────────────────────
     if ilp_result_1.get("transfers"):
         t = ilp_result_1["transfers"][0]
         player_in_rows = other_enriched[
@@ -1012,19 +1327,19 @@ def run_phase4(team_id: int = TEAM_ID,
         if not player_in_rows.empty:
             after_result = get_post_transfer_xi(
                 my_team_enriched,
-                t["out_id"],           # use player_id, not name
+                t["out_id"],
                 player_in_rows.iloc[0],
-                triple_captain=triple_captain
+                triple_captain=triple_captain,
             )
             if after_result:
                 print_post_transfer_xi(
                     result, after_result,
                     t["out_name"], t["in_name"],
-                    current_gw, rmse_map
+                    current_gw, rmse_map,
                 )
 
     print(f"\n{'=' * 75}")
-    print("  OPTIMAL 2-TRANSFER")
+    print(f"  OPTIMAL 2-TRANSFER (ILP{'  — PuLP' if PULP_AVAILABLE else '  — Greedy'})")
     print(f"{'=' * 75}")
     ilp_result_2 = get_ilp_optimal_transfers(
         my_team_enriched, other_enriched, bank_balance, n_transfers=2
@@ -1036,7 +1351,7 @@ def run_phase4(team_id: int = TEAM_ID,
     print(f"{'=' * 75}")
     valid_doubles = get_valid_double_transfers(
         my_team_enriched, other_enriched, bank_balance,
-        top_n=3, precomputed_ilp=ilp_result_2
+        top_n=3, precomputed_ilp=ilp_result_2,
     )
     print_double_transfers(valid_doubles, bank_balance)
 
@@ -1045,11 +1360,11 @@ def run_phase4(team_id: int = TEAM_ID,
         f"from FPL app. Always verify before confirming."
     )
 
-    # ── Save ───────────────────────────────────────────
+    # ── Save ───────────────────────────────────────────────────────
     enriched_df.to_csv("fpl_predictions_phase4.csv", index=False)
     result["starting_xi"].to_csv("fpl_starting_xi.csv", index=False)
     log.info("Saved fpl_predictions_phase4.csv and fpl_starting_xi.csv")
-    log.info("Ready for Phase 6 (Streamlit Dashboard)")
+    log.info("✅ Phase 4 v4 complete — ready for Phase 7 (LLM Analyst)")
 
     return enriched_df, my_team_enriched, result
 
@@ -1066,5 +1381,5 @@ if __name__ == "__main__":
     enriched_df, my_team, result = run_phase4(
         team_id=TEAM_ID,
         max_players=None,
-        refresh=REFRESH
+        refresh=REFRESH,
     )

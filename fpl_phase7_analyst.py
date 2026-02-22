@@ -1353,6 +1353,18 @@ def format_sources_display(sources: list[dict],
 def build_squad_context(my_team: pd.DataFrame, xi_result: dict,
                          bank_balance: float, transfers_made: int,
                          available_chips: list, current_gw: int) -> str:
+    def _xpts_local(row) -> float:
+        try:
+            v = row.get("expected_pts")
+            if v is not None and not pd.isna(v):
+                return float(v)
+        except Exception:
+            pass
+        try:
+            return float(row.get("predicted_pts", 0.0))
+        except Exception:
+            return 0.0
+
     lines = [f"=== MY SQUAD — GW{current_gw + 1} ==="]
     lines.append(
         f"Bank: £{bank_balance:.1f}M | "
@@ -1362,11 +1374,19 @@ def build_squad_context(my_team: pd.DataFrame, xi_result: dict,
     if xi_result:
         cap = xi_result.get("captain", {})
         vc  = xi_result.get("vice_captain", {})
+        cap_pts = _xpts_local(cap) if hasattr(cap, "get") else float(cap.get("predicted_pts", 0)) if isinstance(cap, dict) else 0.0
+        vc_pts = _xpts_local(vc) if hasattr(vc, "get") else float(vc.get("predicted_pts", 0)) if isinstance(vc, dict) else 0.0
+        cap_ev_txt = ""
+        if isinstance(cap, dict) and "captain_ev" in cap:
+            try:
+                cap_ev_txt = f" | Cap EV: {float(cap.get('captain_ev', 0.0)):.1f}"
+            except Exception:
+                cap_ev_txt = ""
         lines.append(
             f"XI: {xi_result.get('formation','?')} | "
             f"Pred: {xi_result.get('total_predicted_pts',0)} pts | "
-            f"Cap: {cap.get('player_name','?')} ({cap.get('predicted_pts',0)} pts) | "
-            f"VC: {vc.get('player_name','?')} ({vc.get('predicted_pts',0)} pts)"
+            f"Cap: {cap.get('player_name','?')} ({cap_pts:.2f} xPts){cap_ev_txt} | "
+            f"VC: {vc.get('player_name','?')} ({vc_pts:.2f} xPts)"
         )
         xi = xi_result.get("starting_xi", pd.DataFrame())
         if not xi.empty:
@@ -1374,15 +1394,21 @@ def build_squad_context(my_team: pd.DataFrame, xi_result: dict,
             for _, row in xi.sort_values("predicted_pts", ascending=False).iterrows():
                 blank = " [BLANK]" if row.get("is_blank_next_gw") else ""
                 dgw   = " [DGW]"   if row.get("double_gws", 0) > 0 else ""
+                rel_txt = ""
+                if "p_plays_full" in row.index:
+                    try:
+                        rel_txt = f"  Full:{float(row.get('p_plays_full', 1.0)):.0%}"
+                    except Exception:
+                        rel_txt = ""
                 lines.append(
                     f"  {row['player_name']:24s} {row['position']:3s} "
-                    f"£{row['price']:.1f}  Pred:{row['predicted_pts']:.2f}  "
-                    f"Run:{row.get('fixture_run_label','?')}{blank}{dgw}"
+                    f"£{row['price']:.1f}  xPts:{_xpts_local(row):.2f}  "
+                    f"Run:{row.get('fixture_run_label','?')}{blank}{dgw}{rel_txt}"
                 )
         bench = xi_result.get("bench", pd.DataFrame())
         if bench is not None and not bench.empty:
             lines.append("Bench: " + " | ".join(
-                f"{r['player_name']} ({r['position']}, {r['predicted_pts']:.1f}pts)"
+                f"{r['player_name']} ({r['position']}, {_xpts_local(r):.1f}xPts)"
                 for _, r in bench.iterrows()
             ))
     return "\n".join(lines)
