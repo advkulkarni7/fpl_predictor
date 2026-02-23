@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import time
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -474,6 +475,7 @@ def main() -> int:
                     conn.rollback()
             except Exception:
                 conn.rollback()
+        traceback.print_exc()
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
 
