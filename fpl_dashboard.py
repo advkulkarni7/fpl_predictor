@@ -33,6 +33,16 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+# Streamlit Cloud secrets are not automatically exposed as env vars in this app.
+# Mirror DATABASE_URL into env so shared DB helpers can use os.getenv("DATABASE_URL").
+if "DATABASE_URL" not in os.environ:
+    try:
+        _db_url_secret = st.secrets.get("DATABASE_URL")
+        if _db_url_secret:
+            os.environ["DATABASE_URL"] = str(_db_url_secret)
+    except Exception:
+        pass
+
 try:
     from fpl_phase1_model import (
         fetch_bootstrap, fetch_fixtures, fetch_current_gw,
@@ -138,6 +148,32 @@ except ImportError:
     HAS_CAPTAIN_DIFF = False
     HAS_HORIZON_PLAN = False
     HAS_DOUBLE_HIT = False
+
+# Optional DB snapshot reader (Neon/Postgres-backed global data path)
+try:
+    from db.snapshot_reader import (
+        get_latest_ready_snapshot,
+        load_snapshot_player_predictions,
+        load_snapshot_team_fixture_run,
+        load_snapshot_player_fixture_features,
+        load_snapshot_model_metrics,
+    )
+    HAS_SNAPSHOT_DB = True
+except Exception:
+    get_latest_ready_snapshot = None
+    load_snapshot_player_predictions = None
+    load_snapshot_team_fixture_run = None
+    load_snapshot_player_fixture_features = None
+    load_snapshot_model_metrics = None
+    HAS_SNAPSHOT_DB = False
+
+try:
+    from db.team_cache import get_cached_team_context, set_cached_team_context
+    HAS_TEAM_CACHE_DB = True
+except Exception:
+    get_cached_team_context = None
+    set_cached_team_context = None
+    HAS_TEAM_CACHE_DB = False
 
 try:
     from fpl_phase7_analyst import (
@@ -1258,14 +1294,46 @@ def render_sidebar_settings(
             "Force fresh API pull",
             key="cfg_refresh",
         )
+        active_team_id = int(st.session_state.get("active_team_id", 0) or 0)
+        raw_team_id_now = str(st.session_state.get("cfg_team_id_text", "")).strip()
+        digits_team_id_now = "".join(ch for ch in raw_team_id_now if ch.isdigit())
+        parsed_team_id_now = int(digits_team_id_now) if digits_team_id_now else 0
+        load_cols = st.columns([1.05, 0.95])
+        with load_cols[0]:
+            if st.button(
+                "Load My Team",
+                use_container_width=True,
+                type="primary",
+                key="sidebar_load_team",
+            ):
+                if parsed_team_id_now > 0:
+                    st.session_state["cfg_team_id"] = parsed_team_id_now
+                    st.session_state["active_team_id"] = parsed_team_id_now
+                    st.session_state["team_context_submitted"] = True
+                    st.session_state["run"] = True
+                    st.rerun()
+                else:
+                    st.session_state["team_context_submitted"] = False
+                    st.session_state["active_team_id"] = 0
+                    st.warning("Enter a valid Team ID first.")
+        with load_cols[1]:
+            if active_team_id > 0:
+                st.caption(f"Active: {active_team_id}")
+            else:
+                st.caption("Locked")
         if st.button("Refresh Data", use_container_width=True, type="primary", key="sidebar_refresh_data"):
-            st.cache_data.clear()
-            st.session_state["data_refreshed_at"] = datetime.now().isoformat(timespec="seconds")
-            st.session_state["run"] = True
-            st.rerun()
+            if int(st.session_state.get("active_team_id", 0) or 0) <= 0:
+                st.warning("Load a valid Team ID first.")
+            else:
+                st.cache_data.clear()
+                st.session_state["data_refreshed_at"] = datetime.now().isoformat(timespec="seconds")
+                st.session_state["run"] = True
+                st.rerun()
         st.caption(
             f"Last refresh: {last_refresh_dt.strftime('%Y-%m-%d %H:%M:%S')} · {freshness_label}"
         )
+        if int(st.session_state.get("active_team_id", 0) or 0) <= 0:
+            st.caption("Personalized analysis unlocks after Team ID submit.")
         if dev_mode:
             st.toggle(
                 "Show QA panel",
@@ -1389,9 +1457,220 @@ def render_page_hero(title: str, subtitle: str = "", meta_chips: list[str] | Non
     )
 
 
+def render_public_landing_page():
+    """Public landing page shown before a Team ID is submitted."""
+    render_page_hero(
+        "FPL Decision Workspace",
+        "Enter your FPL Team ID in the sidebar and click Load My Team to unlock personalized planning, transfers, captaincy, and season tracking.",
+        ["Public landing", "No data load yet", "Team ID required"],
+    )
+    render_section_header("What You Get After Team ID Submit")
+    render_stat_cards(
+        [
+            {"label": "My Squad", "value": "Lineup + Bench", "delta": "Optimized XI, risks, injuries", "tone": "neutral"},
+            {"label": "Transfer Planner", "value": "1FT / 2FT / Hits", "delta": "ILP + horizon plan + advanced signals", "tone": "positive"},
+            {"label": "Captain Picker", "value": "Captain + VC", "delta": "xPts, EV, reliability, differential", "tone": "positive"},
+        ],
+        compact=False,
+    )
+    render_section_header("Getting Started")
+    st.markdown(
+        """
+        <div class='fpl-card'>
+            <div class='kpi-label'>START HERE</div>
+            <ol style='margin:0.35rem 0 0 1.0rem; padding:0; color:var(--text);'>
+                <li style='margin:0.2rem 0;'>Open <b>Settings</b> in the left sidebar.</li>
+                <li style='margin:0.2rem 0;'>Enter your FPL Team ID.</li>
+                <li style='margin:0.2rem 0;'>Click <b>Load My Team</b>.</li>
+                <li style='margin:0.2rem 0;'>Use <b>Refresh Data</b> anytime for a fresh pull.</li>
+            </ol>
+            <div style='margin-top:0.55rem; font-size:0.82rem; color:var(--muted);'>
+                Use <b>Find your ID?</b> in the sidebar if you do not know your Team ID yet.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _build_models_from_metrics_df(metrics_df: pd.DataFrame) -> tuple[dict, dict]:
+    """Reconstruct minimal models/rmse structures from snapshot metrics table."""
+    if metrics_df is None or metrics_df.empty:
+        return {}, {}
+    models = {}
+    rmse_map = {}
+    for _, r in metrics_df.iterrows():
+        pos = str(r.get("position", ""))
+        if not pos:
+            continue
+        rmse_val = pd.to_numeric(pd.Series([r.get("rmse")]), errors="coerce").iloc[0]
+        r2_val = pd.to_numeric(pd.Series([r.get("r2")]), errors="coerce").iloc[0]
+        models[pos] = {
+            "rmse": float(rmse_val) if pd.notna(rmse_val) else 0.0,
+            "r2": float(r2_val) if pd.notna(r2_val) else 0.0,
+        }
+        if pd.notna(rmse_val):
+            rmse_map[pos] = float(rmse_val)
+    return models, rmse_map
+
+
+def _reconstruct_enriched_df_from_snapshot(
+    pred_df: pd.DataFrame,
+    player_fixture_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Rebuild the wide gwX_* columns expected by the dashboard pages."""
+    if pred_df is None:
+        return pd.DataFrame()
+    enriched = pred_df.copy()
+    if enriched.empty:
+        return enriched
+
+    # Snapshot table stores raw payload as JSONB string; not needed in app dataframe.
+    if "raw_json" in enriched.columns:
+        enriched = enriched.drop(columns=["raw_json"])
+
+    if player_fixture_df is None or player_fixture_df.empty:
+        return enriched
+
+    pf = player_fixture_df.copy()
+    if "snapshot_id" in pf.columns:
+        pf = pf.drop(columns=["snapshot_id"])
+    if "snapshot_id" in enriched.columns:
+        enriched = enriched.drop(columns=["snapshot_id"])
+
+    # Normalize bool-like fields to ints to match historical dashboard expectations.
+    for c in ("is_home", "is_blank", "is_double"):
+        if c in pf.columns:
+            pf[c] = pf[c].map(lambda x: None if pd.isna(x) else int(bool(x)))
+
+    if {"player_id", "gw"}.issubset(pf.columns):
+        if "opponent" in pf.columns:
+            piv = pf.pivot_table(index="player_id", columns="gw", values="opponent", aggfunc="first")
+            piv = piv.rename(columns={gw: f"gw{int(gw)}_opponent" for gw in piv.columns})
+            enriched = enriched.merge(piv, left_on="player_id", right_index=True, how="left")
+
+        if "difficulty" in pf.columns:
+            piv = pf.pivot_table(index="player_id", columns="gw", values="difficulty", aggfunc="first")
+            piv = piv.rename(columns={gw: f"gw{int(gw)}_difficulty" for gw in piv.columns})
+            enriched = enriched.merge(piv, left_on="player_id", right_index=True, how="left")
+
+        if "is_home" in pf.columns:
+            piv = pf.pivot_table(index="player_id", columns="gw", values="is_home", aggfunc="first")
+            piv = piv.rename(columns={gw: f"gw{int(gw)}_home" for gw in piv.columns})
+            enriched = enriched.merge(piv, left_on="player_id", right_index=True, how="left")
+
+    return enriched
+
+
+def _load_all_data_from_snapshot_db(team_id: int, refresh: bool = False) -> dict:
+    """DB-backed global snapshot path + live team fetch path (first migration step)."""
+    if not HAS_SNAPSHOT_DB or get_latest_ready_snapshot is None:
+        raise RuntimeError("Snapshot DB reader is not available")
+
+    snapshot_meta = get_latest_ready_snapshot()
+    if not snapshot_meta:
+        raise RuntimeError("No ready snapshot found in database")
+
+    snapshot_id = int(snapshot_meta["id"])
+
+    # Global FPL metadata + team context remain live (team-specific and lightweight).
+    bootstrap = fetch_bootstrap()
+    fixtures_df = fetch_fixtures()
+    current_gw = fetch_current_gw(bootstrap)
+
+    team_data = None
+    transfer_info = None
+
+    if HAS_TEAM_CACHE_DB and get_cached_team_context and set_cached_team_context and not refresh:
+        try:
+            cached = get_cached_team_context(int(team_id), int(current_gw), max_age_minutes=30)
+            if cached and cached.get("status") == "ok":
+                team_data = cached.get("picks_json") or {}
+                transfer_info = cached.get("transfer_info_json") or {}
+        except Exception:
+            # Team cache should be best-effort only.
+            team_data = None
+            transfer_info = None
+
+    if not team_data or not transfer_info:
+        team_data = fetch_my_team(team_id, current_gw)
+        transfer_info = fetch_transfer_info(team_id, current_gw)
+        if HAS_TEAM_CACHE_DB and set_cached_team_context:
+            try:
+                set_cached_team_context(
+                    int(team_id),
+                    int(current_gw),
+                    team_data,
+                    transfer_info,
+                    status="ok",
+                )
+            except Exception:
+                pass
+
+    my_player_ids = [p["element"] for p in team_data["picks"]]
+    chip_info = build_chip_status(team_id, bootstrap, fixtures_df, current_gw)
+
+    pred_snapshot_df = load_snapshot_player_predictions(snapshot_id)
+    team_fixture_snapshot_df = load_snapshot_team_fixture_run(snapshot_id)
+    player_fixture_snapshot_df = load_snapshot_player_fixture_features(snapshot_id)
+    model_metrics_snapshot_df = load_snapshot_model_metrics(snapshot_id)
+
+    # Rebuild a dashboard-compatible enriched_df from normalized snapshot tables.
+    enriched_df = _reconstruct_enriched_df_from_snapshot(pred_snapshot_df, player_fixture_snapshot_df)
+
+    # Types expected by downstream page logic
+    for c in ("player_id", "team_id", "blank_gws", "double_gws"):
+        if c in enriched_df.columns:
+            enriched_df[c] = pd.to_numeric(enriched_df[c], errors="coerce")
+    for c in ("predicted_pts", "expected_pts", "pts_low", "pts_high", "captain_ev", "p_plays_full",
+              "predicted_price_change", "combined_score", "value_score", "avg_difficulty", "momentum_score"):
+        if c in enriched_df.columns:
+            enriched_df[c] = pd.to_numeric(enriched_df[c], errors="coerce")
+
+    my_team = enriched_df[enriched_df["player_id"].isin(my_player_ids)].copy()
+    others = enriched_df[~enriched_df["player_id"].isin(my_player_ids)].copy()
+    if my_team.empty:
+        raise RuntimeError("Snapshot did not contain any of the selected team's players")
+
+    xi_result = optimize_xi_ilp(my_team)
+    models, rmse_map = _build_models_from_metrics_df(model_metrics_snapshot_df)
+
+    advanced_enabled = any(col in enriched_df.columns for col in ("expected_pts", "captain_ev", "p_plays_full"))
+    return {
+        "bootstrap": bootstrap,
+        "fixtures_df": fixtures_df,
+        "current_gw": current_gw,
+        "my_player_ids": my_player_ids,
+        "team_data": team_data,
+        "transfer_info": transfer_info,
+        "enriched_df": enriched_df,
+        "my_team": my_team,
+        "others": others,
+        "xi_result": xi_result,
+        "chip_info": chip_info,
+        "rmse_map": rmse_map,
+        "models": models,
+        "history_df": pd.DataFrame(),
+        "feature_capabilities": get_feature_capabilities(),
+        "advanced_pipeline_enabled": bool(advanced_enabled),
+        "advanced_pipeline_error": "",
+        "cs_prob_map": None,
+        "snapshot_meta": snapshot_meta,
+        "snapshot_team_fixture_df": team_fixture_snapshot_df,
+        "data_source": "snapshot_db",
+    }
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def load_all_data(team_id: int, refresh: bool = False):
     """Load all data from FPL API and run full pipeline. Cached for 5 mins."""
+    if HAS_SNAPSHOT_DB and os.getenv("DATABASE_URL"):
+        try:
+            return _load_all_data_from_snapshot_db(team_id, refresh=refresh)
+        except Exception as e:
+            # Fallback to legacy request-time pipeline if snapshot DB path fails.
+            print(f"[snapshot-db fallback] {e}")
+
     bootstrap   = fetch_bootstrap()
     fixtures_df = fetch_fixtures()
     current_gw  = fetch_current_gw(bootstrap)
@@ -2016,6 +2295,10 @@ if "cfg_team_id" not in st.session_state:
     st.session_state["cfg_team_id"] = int(TEAM_ID if BACKEND_AVAILABLE else 9179961)
 if "cfg_team_id_text" not in st.session_state:
     st.session_state["cfg_team_id_text"] = str(st.session_state["cfg_team_id"])
+if "active_team_id" not in st.session_state:
+    st.session_state["active_team_id"] = 0
+if "team_context_submitted" not in st.session_state:
+    st.session_state["team_context_submitted"] = False
 if "cfg_bank_override" not in st.session_state:
     st.session_state["cfg_bank_override"] = 0.0
 if "cfg_refresh" not in st.session_state:
@@ -2097,7 +2380,7 @@ with st.sidebar:
 render_top_status_bar(
     page=page,
     app_name="FPL AI Assistant",
-    team_id=int(st.session_state["cfg_team_id"]),
+    team_id=int(st.session_state.get("active_team_id", 0) or 0),
     bank_chip=bank_chip,
     freshness_label=freshness_label,
     freshness_color=freshness_color,
@@ -2106,7 +2389,7 @@ if st.session_state.get("show_team_id_help", False):
     st.session_state["show_team_id_help"] = False
     render_team_id_help_dialog()
 
-team_id_input = int(st.session_state["cfg_team_id"])
+team_id_input = int(st.session_state.get("active_team_id", 0) or 0)
 bank_override = float(st.session_state["cfg_bank_override"])
 refresh = bool(st.session_state["cfg_refresh"])
 show_qa_panel = bool(st.session_state["cfg_show_qa_panel"]) if dev_mode else False
@@ -2121,6 +2404,12 @@ if not BACKEND_AVAILABLE:
 
 if "run" not in st.session_state:
     st.session_state["run"] = False
+
+if team_id_input <= 0:
+    render_public_landing_page()
+    if page != "Home":
+        st.info("Personalized pages unlock after you submit a valid Team ID from the sidebar.")
+    st.stop()
 
 try:
     if refresh:
