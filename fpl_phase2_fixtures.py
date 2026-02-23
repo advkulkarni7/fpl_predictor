@@ -146,13 +146,17 @@ def _ewma_weighted_mean(series: pd.Series,
     weight_i = exp(-decay * (max_round - round_i)), decay = 2/(span+1).
     NaN values are dropped before computation.
     """
-    df = pd.DataFrame({"val": series.values, "rnd": rounds.values}).dropna(subset=["val"])
+    df = pd.DataFrame({"val": series.values, "rnd": rounds.values})
+    df["val"] = pd.to_numeric(df["val"], errors="coerce")
+    df["rnd"] = pd.to_numeric(df["rnd"], errors="coerce")
+    df = df.dropna(subset=["val", "rnd"])
     if df.empty:
         return float("nan")
     max_r = float(df["rnd"].max())
     decay = 2.0 / (span + 1)
-    w     = np.exp(-decay * (max_r - df["rnd"]))
+    w = np.exp(-decay * (max_r - df["rnd"]))
     return float((df["val"] * w).sum() / w.sum())
+
 
 
 def build_custom_difficulty(history_df: pd.DataFrame,
