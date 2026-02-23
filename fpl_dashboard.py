@@ -1,4 +1,4 @@
-﻿"""
+"""
 FPL AI Assistant ” Phase 6: Streamlit Dashboard
 ================================================
 Interactive web dashboard bringing all phases together.
@@ -150,6 +150,13 @@ except ImportError as e:
     ANALYST_AVAILABLE = False
     ANALYST_ERROR = str(e)
     ANALYST_STATUS = {}
+
+try:
+    from db.snapshot_reader import get_latest_ready_snapshot
+    HAS_SNAPSHOT_META_DB = True
+except Exception:
+    get_latest_ready_snapshot = None
+    HAS_SNAPSHOT_META_DB = False
 
 st.set_page_config(
     page_title="FPL AI Assistant",
@@ -2011,6 +2018,75 @@ def build_ui_health_snapshot() -> dict:
     }
 
 
+def _coerce_snapshot_datetime(value) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        try:
+            dt = datetime.fromisoformat(str(value))
+        except Exception:
+            return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def get_snapshot_freshness_status(snapshot_meta: dict | None) -> dict | None:
+    if not isinstance(snapshot_meta, dict):
+        return None
+    dt = _coerce_snapshot_datetime(snapshot_meta.get("created_at"))
+    if dt is None:
+        return None
+    age_min = max(0.0, (datetime.now(timezone.utc) - dt).total_seconds() / 60.0)
+    if age_min < 90:
+        label = "Fresh"
+        tone = "fresh"
+    elif age_min < 240:
+        label = "Aging"
+        tone = "aging"
+    else:
+        label = "Stale"
+        tone = "stale"
+    return {
+        "label": label,
+        "tone": tone,
+        "age_min": age_min,
+        "created_at": dt,
+    }
+
+
+def render_snapshot_freshness_banner(snapshot_meta: dict | None):
+    status = get_snapshot_freshness_status(snapshot_meta)
+    if not status:
+        return
+    tone_color = {
+        "fresh": PLOTLY_PRIMARY,
+        "aging": PLOTLY_WARNING,
+        "stale": PLOTLY_DANGER,
+    }.get(status["tone"], PLOTLY_PRIMARY)
+    created_at = status["created_at"].strftime("%Y-%m-%d %H:%M UTC")
+    age_txt = f"{status['age_min']:.0f}m ago"
+    snapshot_id = snapshot_meta.get("id", "—")
+    st.markdown(
+        f"""
+        <div class="fpl-card" style="padding:0.6rem 0.85rem; margin-top:-0.2rem; margin-bottom:0.75rem;">
+            <div style="display:flex; justify-content:space-between; gap:0.6rem; align-items:center; flex-wrap:wrap;">
+                <div style="font-size:0.78rem; color:var(--muted);">
+                    Global Snapshot <span style="color:var(--text); font-weight:700;">#{_safe_text(snapshot_id)}</span>
+                    · {_safe_text(created_at)} · {_safe_text(age_txt)}
+                </div>
+                <span class="fpl-shell-chip" style="border-color:{_safe_text(tone_color)}; color:{_safe_text(tone_color)};">
+                    Snapshot {_safe_text(status["label"])}
+                </span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 dev_mode = os.getenv("FPL_DEBUG_UI", "0") == "1"
 if "cfg_team_id" not in st.session_state:
     st.session_state["cfg_team_id"] = int(TEAM_ID if BACKEND_AVAILABLE else 9179961)
@@ -2136,6 +2212,14 @@ except Exception as e:
     st.error(f"Failed to load data: {e}")
     st.info("Check your team ID and internet connection, then click Refresh Data.")
     st.stop()
+
+snapshot_meta = data.get("snapshot_meta") if isinstance(data, dict) else None
+if snapshot_meta is None and HAS_SNAPSHOT_META_DB and get_latest_ready_snapshot:
+    try:
+        snapshot_meta = get_latest_ready_snapshot()
+    except Exception:
+        snapshot_meta = None
+render_snapshot_freshness_banner(snapshot_meta)
 
 # Unpack
 bootstrap    = data["bootstrap"]
