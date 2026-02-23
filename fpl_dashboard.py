@@ -21,6 +21,8 @@ Install dependencies first:
 import os
 import sys
 import warnings
+import importlib.util
+from pathlib import Path
 from datetime import datetime
 warnings.filterwarnings("ignore")
 
@@ -56,7 +58,35 @@ try:
         compute_score_range, get_rmse_from_models,
         xpts_captain_score,
     )
-    from config import TEAM_ID, VALID_FORMATIONS, POSITION_LIMITS
+    try:
+        from config import TEAM_ID, VALID_FORMATIONS, POSITION_LIMITS
+    except ImportError:
+        # Streamlit Cloud-safe fallback: load repo-tracked config.example.py if config.py is absent.
+        _cfg_example = Path(__file__).with_name("config.example.py")
+        if _cfg_example.exists():
+            _spec = importlib.util.spec_from_file_location("_fpl_config_example", str(_cfg_example))
+            if _spec and _spec.loader:
+                _cfg_mod = importlib.util.module_from_spec(_spec)
+                _spec.loader.exec_module(_cfg_mod)
+                TEAM_ID = int(getattr(_cfg_mod, "TEAM_ID", 9179961))
+                VALID_FORMATIONS = getattr(_cfg_mod, "VALID_FORMATIONS", [
+                    (3, 4, 3), (3, 5, 2), (4, 3, 3), (4, 4, 2),
+                    (4, 5, 1), (5, 3, 2), (5, 4, 1),
+                ])
+                POSITION_LIMITS = getattr(_cfg_mod, "POSITION_LIMITS", {
+                    "Goalkeeper": 2, "Defender": 5, "Midfielder": 5, "Forward": 3,
+                })
+            else:
+                raise ImportError("Could not load config.example.py")
+        else:
+            TEAM_ID = 9179961
+            VALID_FORMATIONS = [
+                (3, 4, 3), (3, 5, 2), (4, 3, 3), (4, 4, 2),
+                (4, 5, 1), (5, 3, 2), (5, 4, 1),
+            ]
+            POSITION_LIMITS = {
+                "Goalkeeper": 2, "Defender": 5, "Midfielder": 5, "Forward": 3,
+            }
     BACKEND_AVAILABLE = True
 except ImportError as e:
     BACKEND_AVAILABLE = False
