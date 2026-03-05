@@ -20,10 +20,11 @@ Install dependencies first:
 
 import os
 import sys
+import json
 import warnings
 import importlib.util
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 warnings.filterwarnings("ignore")
 
 import streamlit as st
@@ -152,10 +153,11 @@ except ImportError as e:
     ANALYST_STATUS = {}
 
 try:
-    from db.snapshot_reader import get_latest_ready_snapshot
+    from db.snapshot_reader import get_latest_ready_snapshot, load_latest_ready_snapshot_bundle
     HAS_SNAPSHOT_META_DB = True
 except Exception:
     get_latest_ready_snapshot = None
+    load_latest_ready_snapshot_bundle = None
     HAS_SNAPSHOT_META_DB = False
 
 st.set_page_config(
@@ -1397,8 +1399,284 @@ def render_page_hero(title: str, subtitle: str = "", meta_chips: list[str] | Non
 
 
 @st.cache_data(ttl=300, show_spinner=False)
+def _snapshot_metrics_to_runtime(model_metrics_df: pd.DataFrame) -> tuple[dict, dict]:
+    rmse_map: dict = {}
+    models: dict = {}
+    if not isinstance(model_metrics_df, pd.DataFrame) or model_metrics_df.empty:
+        return rmse_map, models
+    for _, row in model_metrics_df.iterrows():
+        pos = str(row.get("position", "") or "").strip()
+        if not pos:
+            continue
+        try:
+            rmse_val = float(row.get("rmse")) if row.get("rmse") is not None else np.nan
+        except Exception:
+            rmse_val = np.nan
+        try:
+            r2_val = float(row.get("r2")) if row.get("r2") is not None else 0.0
+        except Exception:
+            r2_val = 0.0
+        if not np.isnan(rmse_val):
+            rmse_map[pos] = rmse_val
+        models[pos] = {"r2": r2_val}
+    return rmse_map, models
+
+
+def _attach_snapshot_fixture_wide_cols(enriched_df: pd.DataFrame, player_fixture_df: pd.DataFrame) -> pd.DataFrame:
+    """Rebuild gw{n}_* wide columns expected by downstream pages from snapshot rows."""
+    if (
+        not isinstance(enriched_df, pd.DataFrame)
+        or enriched_df.empty
+        or not isinstance(player_fixture_df, pd.DataFrame)
+        or player_fixture_df.empty
+        or "player_id" not in enriched_df.columns
+        or not {"player_id", "gw"}.issubset(player_fixture_df.columns)
+    ):
+        return enriched_df
+
+    fixture_map: dict[int, dict] = {}
+    for _, r in player_fixture_df.iterrows():
+        try:
+            pid = int(r.get("player_id"))
+            gw = int(r.get("gw"))
+        except Exception:
+            continue
+        row_map = fixture_map.setdefault(pid, {})
+
+        opp = r.get("opponent")
+        is_blank = bool(r.get("is_blank")) if r.get("is_blank") is not None else False
+        if (opp is None or pd.isna(opp) or str(opp).strip() == "") and is_blank:
+            opp = "BLANK"
+        row_map[f"gw{gw}_opponent"] = opp
+        row_map[f"gw{gw}_difficulty"] = r.get("difficulty")
+        row_map[f"gw{gw}_home"] = r.get("is_home")
+
+    if not fixture_map:
+        return enriched_df
+
+    fixture_wide = pd.DataFrame(
+        [{"player_id": pid, **vals} for pid, vals in fixture_map.items()]
+    )
+    merged = enriched_df.merge(fixture_wide, on="player_id", how="left")
+    return merged
+
+
+def _build_runtime_from_snapshot_bundle(
+    *,
+    bootstrap: dict,
+    fixtures_df: pd.DataFrame,
+    current_gw: int,
+    team_id: int,
+    team_data: dict,
+    transfer_info: dict,
+    snapshot_meta: dict | None,
+    snapshot_bundle: dict | None,
+) -> dict | None:
+    if not isinstance(snapshot_bundle, dict):
+        return None
+
+    pred_df = snapshot_bundle.get("predictions_df")
+    player_fixture_df = snapshot_bundle.get("player_fixture_df")
+    model_metrics_df = snapshot_bundle.get("model_metrics_df")
+    if not isinstance(pred_df, pd.DataFrame) or pred_df.empty:
+        return None
+
+    enriched_df = pred_df.copy()
+    if "snapshot_id" in enriched_df.columns:
+        enriched_df = enriched_df.drop(columns=["snapshot_id"])
+    if "raw_json" in enriched_df.columns:
+        # Keep payload compact in-memory; dashboard uses normalized columns.
+        enriched_df = enriched_df.drop(columns=["raw_json"])
+
+    numeric_cols = [
+        "player_id", "team_id", "price",
+        "predicted_pts", "expected_pts", "pts_low", "pts_high",
+        "captain_ev", "p_plays_full", "predicted_price_change",
+        "combined_score", "value_score", "avg_difficulty",
+        "blank_gws", "double_gws", "momentum_score",
+    ]
+    for col in numeric_cols:
+        if col in enriched_df.columns:
+            enriched_df[col] = pd.to_numeric(enriched_df[col], errors="coerce")
+
+    for col in ["is_blank_next_gw"]:
+        if col in enriched_df.columns:
+            enriched_df[col] = enriched_df[col].astype("boolean")
+
+    if "player_id" in enriched_df.columns:
+        enriched_df["player_id"] = pd.to_numeric(enriched_df["player_id"], errors="coerce").astype("Int64")
+    if "team_id" in enriched_df.columns:
+        enriched_df["team_id"] = pd.to_numeric(enriched_df["team_id"], errors="coerce").astype("Int64")
+
+    enriched_df = _attach_snapshot_fixture_wide_cols(enriched_df, player_fixture_df)
+
+    my_player_ids = [int(p["element"]) for p in team_data.get("picks", []) if "element" in p]
+    if not my_player_ids:
+        return None
+
+    my_team = enriched_df[enriched_df["player_id"].isin(my_player_ids)].copy()
+    others = enriched_df[~enriched_df["player_id"].isin(my_player_ids)].copy()
+    if my_team.empty:
+        return None
+
+    rmse_map, models = _snapshot_metrics_to_runtime(model_metrics_df)
+
+    try:
+        chip_info = build_chip_status(team_id, bootstrap, fixtures_df, current_gw)
+    except Exception:
+        chip_info = {"available_chips": []}
+
+    xi_result = optimize_xi_ilp(my_team)
+
+    advanced_pipeline_enabled = "expected_pts" in enriched_df.columns
+    advanced_pipeline_error = "served from snapshot" if advanced_pipeline_enabled else "snapshot missing expected_pts"
+
+    return {
+        "bootstrap": bootstrap,
+        "fixtures_df": fixtures_df,
+        "current_gw": current_gw,
+        "my_player_ids": my_player_ids,
+        "team_data": team_data,
+        "transfer_info": transfer_info,
+        "enriched_df": enriched_df,
+        "my_team": my_team,
+        "others": others,
+        "xi_result": xi_result,
+        "chip_info": chip_info,
+        "rmse_map": rmse_map,
+        "models": models,
+        "history_df": pd.DataFrame(),
+        "feature_capabilities": get_feature_capabilities(),
+        "advanced_pipeline_enabled": bool(advanced_pipeline_enabled),
+        "advanced_pipeline_error": advanced_pipeline_error,
+        "cs_prob_map": None,
+        "snapshot_meta": snapshot_meta,
+    }
+
+
+PRECOMPUTE_MAX_AGE_HOURS = 18
+PRECOMPUTE_DIR = Path(__file__).with_name("data")
+PRECOMPUTE_PREDICTIONS_PATH = PRECOMPUTE_DIR / "fpl_predictions.csv"
+PRECOMPUTE_FIXTURE_SCORES_PATH = PRECOMPUTE_DIR / "player_fixture_scores.csv"
+PRECOMPUTE_META_PATH = PRECOMPUTE_DIR / "pipeline_meta.json"
+
+
+def _precompute_is_fresh(meta_path: Path, data_path: Path, max_age_hours: float = PRECOMPUTE_MAX_AGE_HOURS) -> tuple[bool, dict | None]:
+    if not data_path.exists():
+        return False, None
+
+    meta: dict = {}
+    dt = None
+    if meta_path.exists():
+        try:
+            loaded = json.loads(meta_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                meta = loaded
+            for key in ("generated_at", "created_at", "updated_at", "built_at", "timestamp"):
+                if key in meta:
+                    dt = _coerce_snapshot_datetime(meta.get(key))
+                    if dt is not None:
+                        break
+        except Exception:
+            meta = {}
+
+    if dt is None:
+        try:
+            dt = datetime.fromtimestamp(data_path.stat().st_mtime, tz=timezone.utc)
+        except Exception:
+            return False, None
+
+    age_hours = max(0.0, (datetime.now(timezone.utc) - dt).total_seconds() / 3600.0)
+    snapshot_meta = {
+        "id": meta.get("snapshot_id", "file-precompute"),
+        "created_at": dt.isoformat(),
+        "status": "ready",
+        "pipeline_version": meta.get("pipeline_version", "file-precompute"),
+    }
+    return age_hours <= float(max_age_hours), snapshot_meta
+
+
+def _build_runtime_from_precomputed_files(
+    *,
+    bootstrap: dict,
+    fixtures_df: pd.DataFrame,
+    current_gw: int,
+    team_id: int,
+    team_data: dict,
+    transfer_info: dict,
+    snapshot_meta: dict | None,
+) -> dict | None:
+    data_path = PRECOMPUTE_FIXTURE_SCORES_PATH if PRECOMPUTE_FIXTURE_SCORES_PATH.exists() else PRECOMPUTE_PREDICTIONS_PATH
+    if not data_path.exists():
+        return None
+
+    try:
+        enriched_df = pd.read_csv(data_path)
+    except Exception:
+        return None
+    if enriched_df.empty or "player_id" not in enriched_df.columns:
+        return None
+
+    numeric_cols = [
+        "player_id", "team_id", "price",
+        "predicted_pts", "expected_pts", "pts_low", "pts_high",
+        "captain_ev", "p_plays_full", "predicted_price_change",
+        "combined_score", "value_score", "avg_difficulty",
+        "blank_gws", "double_gws", "momentum_score",
+    ]
+    for col in numeric_cols:
+        if col in enriched_df.columns:
+            enriched_df[col] = pd.to_numeric(enriched_df[col], errors="coerce")
+
+    if "player_id" in enriched_df.columns:
+        enriched_df["player_id"] = pd.to_numeric(enriched_df["player_id"], errors="coerce").astype("Int64")
+    if "team_id" in enriched_df.columns:
+        enriched_df["team_id"] = pd.to_numeric(enriched_df["team_id"], errors="coerce").astype("Int64")
+
+    my_player_ids = [int(p["element"]) for p in team_data.get("picks", []) if "element" in p]
+    if not my_player_ids:
+        return None
+
+    my_team = enriched_df[enriched_df["player_id"].isin(my_player_ids)].copy()
+    others = enriched_df[~enriched_df["player_id"].isin(my_player_ids)].copy()
+    if my_team.empty:
+        return None
+
+    try:
+        chip_info = build_chip_status(team_id, bootstrap, fixtures_df, current_gw)
+    except Exception:
+        chip_info = {"available_chips": []}
+
+    xi_result = optimize_xi_ilp(my_team)
+    advanced_pipeline_enabled = "expected_pts" in enriched_df.columns
+    advanced_pipeline_error = "served from precomputed file" if advanced_pipeline_enabled else "precomputed file missing expected_pts"
+
+    return {
+        "bootstrap": bootstrap,
+        "fixtures_df": fixtures_df,
+        "current_gw": current_gw,
+        "my_player_ids": my_player_ids,
+        "team_data": team_data,
+        "transfer_info": transfer_info,
+        "enriched_df": enriched_df,
+        "my_team": my_team,
+        "others": others,
+        "xi_result": xi_result,
+        "chip_info": chip_info,
+        "rmse_map": {},
+        "models": {},
+        "history_df": pd.DataFrame(),
+        "feature_capabilities": get_feature_capabilities(),
+        "advanced_pipeline_enabled": bool(advanced_pipeline_enabled),
+        "advanced_pipeline_error": advanced_pipeline_error,
+        "cs_prob_map": None,
+        "snapshot_meta": snapshot_meta,
+    }
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_all_data(team_id: int, refresh: bool = False):
-    """Load all data from FPL API and run full pipeline. Cached for 5 mins."""
+    """Load all data from FPL API and run full pipeline. Cached for 60 mins."""
     bootstrap   = fetch_bootstrap()
     fixtures_df = fetch_fixtures()
     current_gw  = fetch_current_gw(bootstrap)
@@ -1407,6 +1685,45 @@ def load_all_data(team_id: int, refresh: bool = False):
     my_player_ids = [p["element"] for p in team_data["picks"]]
 
     transfer_info = fetch_transfer_info(team_id, current_gw)
+
+    if not refresh and HAS_SNAPSHOT_META_DB and load_latest_ready_snapshot_bundle:
+        try:
+            snapshot_meta, snapshot_bundle = load_latest_ready_snapshot_bundle()
+            snapshot_runtime = _build_runtime_from_snapshot_bundle(
+                bootstrap=bootstrap,
+                fixtures_df=fixtures_df,
+                current_gw=current_gw,
+                team_id=team_id,
+                team_data=team_data,
+                transfer_info=transfer_info,
+                snapshot_meta=snapshot_meta,
+                snapshot_bundle=snapshot_bundle,
+            )
+            if snapshot_runtime is not None:
+                return snapshot_runtime
+        except Exception:
+            pass
+
+    if not refresh:
+        try:
+            is_fresh, file_snapshot_meta = _precompute_is_fresh(
+                meta_path=PRECOMPUTE_META_PATH,
+                data_path=(PRECOMPUTE_FIXTURE_SCORES_PATH if PRECOMPUTE_FIXTURE_SCORES_PATH.exists() else PRECOMPUTE_PREDICTIONS_PATH),
+            )
+            if is_fresh:
+                precomputed_runtime = _build_runtime_from_precomputed_files(
+                    bootstrap=bootstrap,
+                    fixtures_df=fixtures_df,
+                    current_gw=current_gw,
+                    team_id=team_id,
+                    team_data=team_data,
+                    transfer_info=transfer_info,
+                    snapshot_meta=file_snapshot_meta,
+                )
+                if precomputed_runtime is not None:
+                    return precomputed_runtime
+        except Exception:
+            pass
 
     history_df = build_player_history_df(bootstrap, refresh=refresh)
     models     = train_models(history_df)
@@ -1502,6 +1819,7 @@ def load_all_data(team_id: int, refresh: bool = False):
         "advanced_pipeline_enabled": bool(advanced_pipeline_enabled),
         "advanced_pipeline_error": advanced_pipeline_error,
         "cs_prob_map":   cs_prob_map,
+        "snapshot_meta": None,
     }
 
 
