@@ -1,0 +1,15 @@
+{
+  "generated_at": "2026-03-05T03:22:31.178527+00:00",
+  "pipeline_version": "precompute-v1",
+  "current_gw": 29,
+  "row_count_predictions": 819,
+  "row_count_fixture_scores": 819,
+  "row_count_history": 22342,
+  "files": {
+    "fpl_predictions_csv": "D:/FPL/fpl-ai-assistant/data/fpl_predictions.csv",
+    "player_fixture_scores_csv": "D:/FPL/fpl-ai-assistant/data/player_fixture_scores.csv",
+    "model_metrics_csv": "D:/FPL/fpl-ai-assistant/data/model_metrics.csv",
+    "pipeline_meta_json": "D:/FPL/fpl-ai-assistant/data/pipeline_meta.json",
+    "fpl_model_pkl": "D:/FPL/fpl-ai-assistant/data/fpl_model.pkl"
+  }
+}

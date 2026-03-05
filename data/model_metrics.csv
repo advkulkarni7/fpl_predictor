@@ -1,0 +1,5 @@
+position,rmse,r2,model_name,n_train_rows
+Goalkeeper,0.29916780152588207,0.0,XGBRegressor,
+Defender,0.24757467966279517,0.0,XGBRegressor,
+Midfielder,0.23038669515565088,0.0,XGBRegressor,
+Forward,0.17917149508608882,0.0,XGBRegressor,
