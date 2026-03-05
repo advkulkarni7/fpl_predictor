@@ -75,6 +75,15 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split, TimeSeriesSplit
 from sklearn.metrics import mean_squared_error, r2_score
 
+try:
+    from db.team_cache import get_team_cache, upsert_team_cache_ok, upsert_team_cache_failed
+    HAS_TEAM_DB_CACHE = True
+except Exception:
+    get_team_cache = None
+    upsert_team_cache_ok = None
+    upsert_team_cache_failed = None
+    HAS_TEAM_DB_CACHE = False
+
 # ─────────────────────────────────────────
 # 0. CONFIG + LOGGING
 # ─────────────────────────────────────────
@@ -178,13 +187,29 @@ def fetch_current_gw(bootstrap: dict) -> int:
 
 def fetch_my_team(team_id: int, current_gw: int) -> dict:
     """Picks for your FPL team in the given gameweek."""
-    r = requests.get(f"{BASE_URL}/entry/{team_id}/event/{current_gw}/picks/")
-    r.raise_for_status()
-    return r.json()
+    if HAS_TEAM_DB_CACHE and get_team_cache:
+        cached = get_team_cache(team_id, current_gw)
+        if cached and cached.get("status") == "ok" and isinstance(cached.get("picks_json"), dict):
+            return cached["picks_json"]
+    try:
+        r = requests.get(f"{BASE_URL}/entry/{team_id}/event/{current_gw}/picks/")
+        r.raise_for_status()
+        payload = r.json()
+        if HAS_TEAM_DB_CACHE and upsert_team_cache_ok:
+            upsert_team_cache_ok(team_id, current_gw, picks_json=payload)
+        return payload
+    except Exception as e:
+        if HAS_TEAM_DB_CACHE and upsert_team_cache_failed:
+            upsert_team_cache_failed(team_id, current_gw, f"fetch_my_team: {e}")
+        raise
 
 
 def fetch_transfer_info(team_id: int, current_gw: int) -> dict:
     """Bank balance and transfer status. Bank is a deadline snapshot."""
+    if HAS_TEAM_DB_CACHE and get_team_cache:
+        cached = get_team_cache(team_id, current_gw)
+        if cached and cached.get("status") == "ok" and isinstance(cached.get("transfer_info_json"), dict):
+            return cached["transfer_info_json"]
     try:
         r = requests.get(f"{BASE_URL}/entry/{team_id}/history/")
         r.raise_for_status()
@@ -200,13 +225,18 @@ def fetch_transfer_info(team_id: int, current_gw: int) -> dict:
         else:
             status = f"{transfers_made} transfers made — {transfer_cost} pt hit taken"
 
-        return {
+        payload = {
             "bank_balance":    bank_balance,
             "transfers_made":  transfers_made,
             "transfer_status": status,
         }
+        if HAS_TEAM_DB_CACHE and upsert_team_cache_ok:
+            upsert_team_cache_ok(team_id, current_gw, transfer_info_json=payload)
+        return payload
     except Exception as e:
         log.warning(f"Could not fetch transfer info: {e}")
+        if HAS_TEAM_DB_CACHE and upsert_team_cache_failed:
+            upsert_team_cache_failed(team_id, current_gw, f"fetch_transfer_info: {e}")
         return {
             "bank_balance":    0.0,
             "transfers_made":  0,
