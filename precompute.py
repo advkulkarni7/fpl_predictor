@@ -35,7 +35,8 @@ DATA_DIR = Path(__file__).resolve().parent / "data"
 PREDICTIONS_CSV = DATA_DIR / "fpl_predictions.csv"
 FIXTURE_SCORES_CSV = DATA_DIR / "player_fixture_scores.csv"
 PIPELINE_META_JSON = DATA_DIR / "pipeline_meta.json"
-MODEL_METRICS_CSV = DATA_DIR / "model_metrics.csv"
+MODEL_METRICS_CSV  = DATA_DIR / "model_metrics.csv"
+MODEL_METRICS_JSON = DATA_DIR / "model_metrics.json"
 MODEL_PKL = DATA_DIR / "fpl_model.pkl"
 PIPELINE_VERSION = "precompute-v1"
 
@@ -54,6 +55,18 @@ def _safe_float(val):
 
 
 def _build_model_metrics_df(models: dict) -> pd.DataFrame:
+    """
+    Build a DataFrame of per-position model metrics for the CSV artefact.
+
+    Column alignment with model_metrics.json (v5.1):
+      - train_size / test_size: correct keys from train_models() output.
+        Previous versions read "n_train_rows" which was never stored,
+        producing a column of all-None values. Fixed in precompute v1.1.
+      - cv_rmse / cv_r2: cross-validation metrics (always present in v5+).
+      - cv_degraded: True when CV R² < 0 (added in Phase 1 v5.1).
+        Allows the dashboard / monitoring to surface degraded positions
+        without re-parsing the full JSON.
+    """
     rows: list[dict] = []
     for pos, info in (models or {}).items():
         if not isinstance(info, dict):
@@ -61,18 +74,50 @@ def _build_model_metrics_df(models: dict) -> pd.DataFrame:
         model_obj = info.get("model")
         rows.append(
             {
-                "position": str(pos),
-                "rmse": _safe_float(info.get("rmse")),
-                "r2": _safe_float(info.get("r2")),
-                "model_name": type(model_obj).__name__ if model_obj is not None else None,
-                "n_train_rows": _safe_float(info.get("n_train_rows")),
+                "position":            str(pos),
+                "rmse":                _safe_float(info.get("rmse")),
+                "r2":                  _safe_float(info.get("r2")),
+                "cv_rmse":             _safe_float(info.get("cv_rmse")),
+                "cv_r2":               _safe_float(info.get("cv_r2")),
+                "naive_baseline_rmse": _safe_float(info.get("naive_baseline_rmse")),
+                "beats_baseline":      bool(info.get("beats_baseline")) if info.get("beats_baseline") is not None else None,
+                # cv_degraded: CV R² < 0 — model generalises worse than mean
+                # predictor. Predictions for this position are blended with
+                # the naive roll3_pts baseline in build_current_features.
+                "cv_degraded":         bool(info.get("cv_degraded", False)),
+                "model_name":          type(model_obj).__name__ if model_obj is not None else None,
+                # train_size / test_size: correct keys as stored by train_models().
+                # "n_train_rows" was the old (wrong) key — never populated.
+                "train_size":          int(info["train_size"]) if info.get("train_size") is not None else None,
+                "test_size":           int(info["test_size"])  if info.get("test_size")  is not None else None,
             }
         )
     return pd.DataFrame(rows)
 
 
+def _load_existing_shap_features(json_path: Path) -> dict[str, dict]:
+    """Load previously persisted SHAP map so degraded runs don't wipe it."""
+    try:
+        if not json_path.exists():
+            return {}
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+        positions = payload.get("positions", {}) if isinstance(payload, dict) else {}
+        out: dict[str, dict] = {}
+        for pos, info in positions.items():
+            if not isinstance(info, dict):
+                continue
+            shp = info.get("shap_top_features")
+            if isinstance(shp, dict) and shp:
+                out[str(pos)] = {str(k): float(v) for k, v in shp.items()}
+        return out
+    except Exception:
+        return {}
+
+
 def run_pipeline() -> dict:
     print(f"[{_iso_now()}] Pipeline start")
+    pipeline_warnings: list[str] = []
+    pipeline_status = "ready"
 
     bootstrap = fetch_bootstrap()
     fixtures_df = fetch_fixtures()
@@ -97,25 +142,34 @@ def run_pipeline() -> dict:
     try:
         component_models = train_component_models(history_df)
         pred_df = predict_component_pts(component_models, pred_df)
-    except Exception:
-        pass
+    except Exception as exc:
+        pipeline_status = "degraded"
+        pipeline_warnings.append(f"Component models unavailable: {exc}")
+        print(f"[{_iso_now()}] Warning: {pipeline_warnings[-1]}")
     try:
         pred_df = compute_expected_pts(pred_df)
-    except Exception:
-        pass
+    except Exception as exc:
+        pipeline_status = "degraded"
+        pipeline_warnings.append(f"Expected points computation failed: {exc}")
+        print(f"[{_iso_now()}] Warning: {pipeline_warnings[-1]}")
     try:
         price_model = train_price_model(history_df)
         pred_df = add_price_predictions(price_model, pred_df)
-    except Exception:
-        pass
+    except Exception as exc:
+        pipeline_status = "degraded"
+        pipeline_warnings.append(f"Price model unavailable: {exc}")
+        print(f"[{_iso_now()}] Warning: {pipeline_warnings[-1]}")
 
     custom_diff = build_custom_difficulty(history_df, bootstrap)
     team_form_map = build_team_form(history_df, bootstrap)
     opp_scoring_map = build_opponent_scoring_map(history_df)
     try:
         cs_prob_map = build_cs_probability_map(history_df)
-    except Exception:
+    except Exception as exc:
         cs_prob_map = {}
+        pipeline_status = "degraded"
+        pipeline_warnings.append(f"Clean-sheet probability map failed: {exc}")
+        print(f"[{_iso_now()}] Warning: {pipeline_warnings[-1]}")
 
     fixture_run_df = build_fixture_run(
         bootstrap=bootstrap,
@@ -153,6 +207,8 @@ def run_pipeline() -> dict:
         "models": models,
         "pred_df": pred_df,
         "enriched_df": enriched_df,
+        "pipeline_status": pipeline_status,
+        "pipeline_warnings": pipeline_warnings,
     }
 
 
@@ -166,6 +222,44 @@ def save_outputs(pipeline: dict) -> None:
     pred_df.to_csv(PREDICTIONS_CSV, index=False)
     enriched_df.to_csv(FIXTURE_SCORES_CSV, index=False)
     _build_model_metrics_df(models).to_csv(MODEL_METRICS_CSV, index=False)
+
+    # Write model_metrics.json — includes SHAP which the CSV cannot store
+    try:
+        import json as _json
+        prev_shap = _load_existing_shap_features(MODEL_METRICS_JSON)
+        positions_payload = {}
+        for pos, info in (models or {}).items():
+            if not isinstance(info, dict):
+                continue
+            current_shap = {
+                str(feat): float(val)
+                for feat, val in (info.get("shap_top_features") or {}).items()
+            }
+            if not current_shap and str(pos) in prev_shap:
+                current_shap = prev_shap[str(pos)]
+            positions_payload[pos] = {
+                "rmse":              _safe_float(info.get("rmse")),
+                "r2":                _safe_float(info.get("r2")),
+                "cv_rmse":           _safe_float(info.get("cv_rmse")),
+                "cv_r2":             _safe_float(info.get("cv_r2")),
+                "naive_baseline_rmse": _safe_float(info.get("naive_baseline_rmse")),
+                "beats_baseline":    bool(info.get("beats_baseline")) if info.get("beats_baseline") is not None else None,
+                # cv_degraded added in Phase 1 v5.1 — True when CV R² < 0.
+                "cv_degraded":       bool(info.get("cv_degraded", False)),
+                "train_size":        int(info["train_size"]) if info.get("train_size") is not None else None,
+                "test_size":         int(info["test_size"]) if info.get("test_size") is not None else None,
+                "shap_top_features": current_shap,
+            }
+        _metrics_payload = {
+            "generated_at": _iso_now(),
+            "positions": positions_payload,
+        }
+        MODEL_METRICS_JSON.write_text(
+            _json.dumps(_metrics_payload, indent=2), encoding="utf-8"
+        )
+        print(f"[{_iso_now()}] Wrote {MODEL_METRICS_JSON}")
+    except Exception as _e:
+        print(f"[{_iso_now()}] Warning: could not write model_metrics.json: {_e}")
 
     # Keep legacy compatibility for code that expects a pickled model artifact.
     with MODEL_PKL.open("wb") as f:
@@ -181,6 +275,8 @@ def save_outputs(pipeline: dict) -> None:
     meta = {
         "generated_at": _iso_now(),
         "pipeline_version": PIPELINE_VERSION,
+        "status": str(pipeline.get("pipeline_status", "ready")),
+        "warnings": list(pipeline.get("pipeline_warnings", []) or []),
         "current_gw": pipeline["current_gw"],
         "row_count_predictions": int(len(pred_df)),
         "row_count_fixture_scores": int(len(enriched_df)),
@@ -188,7 +284,8 @@ def save_outputs(pipeline: dict) -> None:
         "files": {
             "fpl_predictions_csv": str(PREDICTIONS_CSV.as_posix()),
             "player_fixture_scores_csv": str(FIXTURE_SCORES_CSV.as_posix()),
-            "model_metrics_csv": str(MODEL_METRICS_CSV.as_posix()),
+            "model_metrics_csv":  str(MODEL_METRICS_CSV.as_posix()),
+            "model_metrics_json": str(MODEL_METRICS_JSON.as_posix()),
             "pipeline_meta_json": str(PIPELINE_META_JSON.as_posix()),
             "fpl_model_pkl": str(MODEL_PKL.as_posix()),
         },
@@ -201,7 +298,12 @@ def main() -> int:
     try:
         pipeline = run_pipeline()
         save_outputs(pipeline)
-        print(f"[{_iso_now()}] Precompute complete")
+        if str(pipeline.get("pipeline_status", "ready")) == "degraded":
+            print(f"[{_iso_now()}] Precompute complete (degraded)")
+            for warning in list(pipeline.get("pipeline_warnings", []) or []):
+                print(f"[{_iso_now()}] Degraded reason: {warning}")
+        else:
+            print(f"[{_iso_now()}] Precompute complete")
         return 0
     except Exception as exc:
         print(f"[{_iso_now()}] Precompute failed: {exc}")
