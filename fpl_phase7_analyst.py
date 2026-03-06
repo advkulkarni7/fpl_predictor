@@ -36,6 +36,7 @@ Keys in config.py:
 """
 
 import re
+import os
 import logging
 import hashlib
 import json
@@ -66,6 +67,13 @@ except ImportError:
     GROQ_OK = False
 
 try:
+    from google import genai
+    GEMINI_OK = True
+except ImportError:
+    genai = None
+    GEMINI_OK = False
+
+try:
     import understat
     import asyncio
     try:
@@ -91,6 +99,25 @@ except ImportError:
     ODDS_API_KEY      = ""
     TRANSFER_LOG_FILE = "transfer_history.json"
 
+try:
+    import config as _cfg_mod
+except Exception:
+    _cfg_mod = None
+
+
+def _cfg_or_env(name: str, default: str = "") -> str:
+    env_val = os.getenv(name)
+    if env_val is not None and str(env_val).strip() != "":
+        return str(env_val).strip()
+    if _cfg_mod is not None:
+        try:
+            cfg_val = getattr(_cfg_mod, name)
+            if cfg_val is not None and str(cfg_val).strip() != "":
+                return str(cfg_val).strip()
+        except Exception:
+            pass
+    return default
+
 log = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────
@@ -98,6 +125,9 @@ log = logging.getLogger(__name__)
 # ─────────────────────────────────────────
 
 GROQ_MODEL             = "llama-3.3-70b-versatile"
+GEMINI_MODEL           = _cfg_or_env("GEMINI_MODEL", "gemini-2.5-flash")
+ANALYST_PROVIDER       = _cfg_or_env("ANALYST_PROVIDER", "groq").lower()
+GEMINI_API_KEY         = _cfg_or_env("GEMINI_API_KEY", "")
 MAX_TOKENS             = 1024
 FETCH_TIMEOUT          = 6
 MAX_ARTICLES           = 3
@@ -1791,6 +1821,44 @@ def call_groq(question: str, context: str,
         return f"LLM error: {str(e)[:200]}"
 
 
+def call_gemini(question: str, context: str,
+                chat_history: list[dict] = None,
+                stream: bool = False):
+    if not GEMINI_OK:
+        return "Gemini SDK not installed. Run: pip install google-genai"
+    if not GEMINI_API_KEY:
+        return "GEMINI_API_KEY not set"
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        history_lines = []
+        if chat_history:
+            for msg in chat_history[-(MAX_CHAT_HISTORY * 2):]:
+                role = str(msg.get("role", "user")).upper()
+                content = str(msg.get("content", "")).strip()
+                if content:
+                    history_lines.append(f"{role}: {content}")
+        history_block = "\n".join(history_lines)
+        prompt = (
+            f"{SYSTEM_PROMPT}\n\n"
+            f"LIVE DATA CONTEXT:\n{context}\n\n"
+            f"CHAT HISTORY:\n{history_block if history_block else '(none)'}\n\n"
+            f"QUESTION: {question}"
+        )
+        # Keep non-stream response path for current dashboard integration.
+        resp = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+        )
+        txt = getattr(resp, "text", None)
+        if txt and str(txt).strip():
+            return str(txt).strip()
+        # Fallback if SDK returns parts structure without .text
+        return str(resp)
+    except Exception as e:
+        log.error(f"Gemini error: {e}")
+        return f"LLM error: {str(e)[:200]}"
+
+
 # ─────────────────────────────────────────
 # CACHE
 # ─────────────────────────────────────────
@@ -1852,7 +1920,11 @@ def run_analyst(question: str, my_team, others, enriched_df,
         roll_advice=roll_advice, hit_transfers=hit_transfers,
     )
 
-    answer = call_groq(question, context, chat_history, stream=use_stream)
+    provider = str(ANALYST_PROVIDER or "groq").lower().strip()
+    if provider == "gemini":
+        answer = call_gemini(question, context, chat_history, stream=use_stream)
+    else:
+        answer = call_groq(question, context, chat_history, stream=use_stream)
 
     if not use_stream and isinstance(answer, str):
         _set_cached(cache_key, answer)
@@ -1880,6 +1952,7 @@ def run_analyst(question: str, my_team, others, enriched_df,
 
 ANALYST_STATUS = {
     "groq":       GROQ_OK,
+    "gemini":     GEMINI_OK,
     "newsapi":    NEWSAPI_OK,
     "feedparser": FEEDPARSER_OK,
     "understat":  UNDERSTAT_OK,
