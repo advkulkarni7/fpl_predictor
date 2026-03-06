@@ -38,28 +38,40 @@ logger = logging.getLogger(__name__)
 
 
 def _load_last_team_id() -> int | None:
+    """
+    Read team ID from the URL query parameter ?team_id=XXXXX.
+
+    st.query_params is scoped to the individual user's browser tab — each user
+    has their own URL, so there is no sharing between users. The ID persists as
+    long as the user keeps the URL (or bookmarks it), giving them the convenience
+    of not re-entering it every visit without any cross-user leakage.
+
+    Returns None if the parameter is absent or invalid.
+    """
     try:
-        if not LAST_TEAM_ID_PATH.exists():
-            return None
-        raw = LAST_TEAM_ID_PATH.read_text(encoding="utf-8").strip()
-        digits_only = "".join(ch for ch in raw if ch.isdigit())
+        raw = st.query_params.get("team_id", "")
+        digits_only = "".join(ch for ch in str(raw).strip() if ch.isdigit())
         if digits_only and int(digits_only) > 0:
             return int(digits_only)
-    except (OSError, UnicodeDecodeError, ValueError, TypeError) as e:
-        logger.warning("Failed to read last team id from %s: %s", LAST_TEAM_ID_PATH, e)
-        return None
+    except Exception:
+        pass
     return None
 
 
 def _save_last_team_id(team_id: int | str):
+    """
+    Persist team ID to the URL query parameter ?team_id=XXXXX.
+
+    This is per-user (scoped to their browser tab/URL) and survives page
+    refreshes. The user can bookmark the URL to skip the entry gate on return.
+    No server-side file is written — no cross-user leakage.
+    """
     try:
         digits_only = "".join(ch for ch in str(team_id).strip() if ch.isdigit())
-        if not digits_only or int(digits_only) <= 0:
-            return
-        LAST_TEAM_ID_PATH.parent.mkdir(parents=True, exist_ok=True)
-        LAST_TEAM_ID_PATH.write_text(digits_only, encoding="utf-8")
-    except (OSError, ValueError, TypeError) as e:
-        logger.warning("Failed to persist last team id to %s: %s", LAST_TEAM_ID_PATH, e)
+        if digits_only and int(digits_only) > 0:
+            st.query_params["team_id"] = digits_only
+    except Exception:
+        pass
 
 try:
     from fpl_phase1_model import (
@@ -3292,14 +3304,18 @@ def render_snapshot_freshness_banner(snapshot_meta: dict | None):
 
 
 dev_mode = os.getenv("FPL_DEBUG_UI", "0") == "1"
+# Read team ID from ?team_id= URL param — per-user, no server-side sharing.
+# Returns None on first visit (no param set), so the entry gate fires.
+# Returns the user's own ID on return visits (they kept the URL/bookmark).
 saved_team_id = _load_last_team_id()
 if "cfg_team_id" not in st.session_state:
-    default_team_id = int(TEAM_ID if BACKEND_AVAILABLE else 9179961)
-    st.session_state["cfg_team_id"] = int(saved_team_id if saved_team_id else default_team_id)
+    # Use query-param ID if present, otherwise 0 so entry gate fires.
+    # TEAM_ID from config.py is a developer default for local single-user runs only.
+    st.session_state["cfg_team_id"] = int(saved_team_id) if saved_team_id else 0
 if "cfg_team_id_text" not in st.session_state:
-    st.session_state["cfg_team_id_text"] = str(st.session_state["cfg_team_id"])
+    st.session_state["cfg_team_id_text"] = str(saved_team_id) if saved_team_id else ""
 if "entry_gate_team_id" not in st.session_state:
-    st.session_state["entry_gate_team_id"] = str(st.session_state["cfg_team_id_text"])
+    st.session_state["entry_gate_team_id"] = str(saved_team_id) if saved_team_id else ""
 if "cfg_bank_override" not in st.session_state:
     st.session_state["cfg_bank_override"] = 0.0
 if "cfg_show_qa_panel" not in st.session_state:
@@ -3313,6 +3329,8 @@ if "ui_settings_expanded" not in st.session_state:
 if "show_team_id_help" not in st.session_state:
     st.session_state["show_team_id_help"] = False
 if "entry_gate_done" not in st.session_state:
+    # True only if this user's own URL already has ?team_id= set from a prior visit.
+    # False on a brand-new visit (no param) — entry gate always fires for new users.
     st.session_state["entry_gate_done"] = bool(saved_team_id)
 
 if not bool(st.session_state.get("entry_gate_done", False)):
@@ -5780,11 +5798,11 @@ elif page == "Scout":
             ["Goalkeeper","Defender","Midfielder","Forward"],
             key="px_pos_filter_widget")
     with f2:
-        price_range = st.slider("Price Range (£M)", 3.5, 15.0, st.session_state["px_price_range_widget"], 0.5, key="px_price_range_widget")
+        price_range = st.slider("Price Range (£M)", 3.5, 15.0, step=0.5, key="px_price_range_widget")
     with f3:
-        min_pred = st.slider("Min Predicted Pts", 0.0, 15.0, st.session_state["px_min_pred_widget"], 0.5, key="px_min_pred_widget")
+        min_pred = st.slider("Min Predicted Pts", 0.0, 15.0, step=0.5, key="px_min_pred_widget")
     with f4:
-        search = st.text_input("Search player name", st.session_state["px_search_widget"], key="px_search_widget")
+        search = st.text_input("Search player name", key="px_search_widget")
 
     # Persist latest filter values across mode/layout switches.
     st.session_state["px_pos_filter"] = pos_filter
