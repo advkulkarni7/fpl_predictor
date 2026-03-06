@@ -52,6 +52,30 @@ New in v5 (8 algorithmic additions):
      never evaluated. Now caps at min(5, remaining_gws) so late-season
      transfers are evaluated with whatever data is available.
 
+Fixes in v5.1 (3 bug fixes):
+
+  🔴 FIX A — ILP objective now correctly maximises total_ev (v5.1):
+     The original v5 ILP objective maximised 'gain' (combined_score diff —
+     a 5-GW fixture-weighted score) but reported total_ev as if that was
+     what had been optimised. This meant the "best transfer" shown was
+     actually the best 5-GW prospect, not the best total_ev transfer, and
+     the two can differ when price movements favour a player with a shorter
+     but harder fixture run. Fixed: objective is now total_ev throughout.
+     'gain' is still computed per pair and stored for display.
+
+  🟡 FIX B — bench_ev floor prevents zero values for healthy squads (v5.1):
+     When all 11 starters have p_plays_full = 1.0 (fully fit squad),
+     p_at_least_one_miss = 1 - prod(1.0^11) = 0.0, making bench_ev = 0.0
+     for every bench player. This rendered bench ordering meaningless during
+     clean-bill-of-health weeks. Fixed: p_at_least_one_miss floored at 0.05
+     (5% in-game injury/substitution probability, realistic even for fit squads).
+
+  🟡 FIX C — c_val dead code removed from Monte Carlo (v5.1):
+     Two lines computed c_val = (mode - low) / (high - low) inside the
+     triangular sampling loop but c_val was never used — numpy's
+     rng.triangular() takes left/mode/right directly. Removed to eliminate
+     confusion about whether the sampling was parametrised correctly.
+
 Changes preserved from v4 (11 fixes):
   - Wildcard chip any() substring check
   - Phase 1 v5 full pipeline in run_phase3
@@ -251,8 +275,20 @@ def get_ilp_optimal_transfers(my_team_enriched: pd.DataFrame,
     """
     ILP-based optimal transfer finder using PuLP.
 
-    v5: each pair now also carries total_ev = xPts gain + price movement EV.
-    Falls back to greedy if PuLP unavailable.
+    Objective: maximise total_ev = xpts_gain + price_movement_EV per transfer.
+      total_ev = (expected_pts_in - expected_pts_out)
+               + FPL_PROFIT_FRACTION * (in_price_change - out_price_change)
+
+    This is what the function claims to optimise and what it reports. Previous
+    versions (v5 original) maximised 'gain' (combined_score diff — a 5-GW
+    fixture-weighted score) while reporting total_ev, causing a mismatch: the
+    solver picked the best 5-GW prospect but the output labelled it as the
+    best total_ev transfer. Fixed in v5.1.
+
+    'gain' (combined_score diff) is still computed and stored per-pair for
+    reference and display; it is no longer the solver objective.
+
+    Falls back to greedy ranking by total_ev if PuLP unavailable.
     """
     if not PULP_AVAILABLE:
         log.warning("PuLP not installed. Run: pip install pulp")
@@ -310,7 +346,10 @@ def get_ilp_optimal_transfers(my_team_enriched: pd.DataFrame,
     if not valid_pairs:
         return {"error": "No valid transfer pairs found", "transfers": []}
 
-    prob += pulp.lpSum(p["gain"] * p["var"] for p in valid_pairs)
+    # Objective: maximise total_ev (xpts_gain + price movement EV).
+    # total_ev is what this function claims to optimise and what it reports.
+    # 'gain' (combined_score diff) is stored per pair for display only.
+    prob += pulp.lpSum(p["total_ev"] * p["var"] for p in valid_pairs)
     prob += (pulp.lpSum(p["var"] for p in valid_pairs) == n_transfers,
              "total_transfers")
 
@@ -532,8 +571,8 @@ def run_monte_carlo_captain(my_team_enriched: pd.DataFrame,
             if highs[j] - lows[j] < 1e-9:
                 samples[:, j] = modes[j]
             else:
-                c_val = (modes[j] - lows[j]) / (highs[j] - lows[j])
-                c_val = float(np.clip(c_val, 0.0, 1.0))
+                # rng.triangular takes left/mode/right directly.
+                # No intermediate c_val needed.
                 samples[:, j] = rng.triangular(
                     left=float(lows[j]),
                     mode=float(modes[j]),
@@ -645,10 +684,15 @@ def get_bench_order_recommendation(my_team_enriched: pd.DataFrame) -> dict:
 
     # Expected auto-sub contribution per bench player
     # Prob at least one starter misses = 1 - prod(p_plays_full for starters)
+    # Floor at 0.05 (5%): even a fully fit squad has some auto-sub probability —
+    # injuries happen in-game regardless of pre-match fitness. Without this floor,
+    # a squad where all 11 starters have p_plays_full=1.0 produces
+    # p_at_least_one_miss=0.0 and bench_ev=0.0 for every bench player, making
+    # bench ordering meaningless when the squad is at peak fitness.
     p_full_starters = starting_xi["p_plays_full"].astype(float).values \
         if "p_plays_full" in starting_xi.columns \
         else np.ones(len(starting_xi))
-    p_at_least_one_miss = 1.0 - float(np.prod(p_full_starters))
+    p_at_least_one_miss = max(0.05, 1.0 - float(np.prod(p_full_starters)))
 
     bench_rows = []
     for _, bp in bench_df.iterrows():
