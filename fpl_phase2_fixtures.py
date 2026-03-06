@@ -407,13 +407,17 @@ def build_chip_status(team_id: int,
         entry       = r.json()
         chips_played = entry.get("chips", []) or []
 
+        # Build chips_used only from entries where the chip was actually played
+        # (event > 0). The FPL API may now return ALL chip types in the chips
+        # array, including ones with event=0/null that haven't been used yet.
         chips_used: dict = {}
         for c in chips_played:
             if not isinstance(c, dict):
                 continue
             name = c.get("name", "")
             gw   = c.get("event", 0) or 0
-            chips_used.setdefault(name, []).append(gw)
+            if gw > 0:  # only count as used if actually played in a real GW
+                chips_used.setdefault(name, []).append(gw)
 
         # Wildcard: half-season aware
         in_first_half     = current_gw < _WILDCARD_SPLIT_GW
