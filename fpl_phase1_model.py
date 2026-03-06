@@ -1,52 +1,66 @@
 """
-FPL AI Assistant — Phase 1: Deep ML Model (v5)
+FPL AI Assistant -- Phase 1: Deep ML Model (v5)
 ===============================================
 Improvements over v4:
 
-  🔴 HIGH IMPACT — ALGORITHMIC:
-  1. EWMA Form Features — shift(1).ewm(span=N) replaces equal-weight rolling.
+  HIGH IMPACT -- ALGORITHMIC:
+  1. EWMA Form Features -- shift(1).ewm(span=N) replaces equal-weight rolling.
      Recent GWs carry more predictive weight. Added for pts, mins, goals,
      assists, threat, creativity. Both EWMA and rolling kept so the model
      can choose which carries more signal.
-  2. Expected Minutes (xMins) Probability Weighting — predicted_pts is now
+  2. Expected Minutes (xMins) Probability Weighting -- predicted_pts is now
      adjusted by P(player plays meaningfully), combining chance_of_playing
      and rolling average minutes to penalise rotation risks. Stored as
      expected_pts alongside raw predicted_pts.
-  3. XGBoost Quantile Regression — each position now trains THREE models:
-       - Median model  (objective=squarederror)   → predicted_pts
-       - Q10 floor     (quantile_alpha=0.10)       → pts_low
-       - Q90 ceiling   (quantile_alpha=0.90)       → pts_high
-     This gives confidence intervals: "Salah: 6.2 pts | range 2.8–13.1"
+  3. XGBoost Quantile Regression -- each position now trains THREE models:
+       - Median model  (objective=squarederror)   -> predicted_pts
+       - Q10 floor     (quantile_alpha=0.10)       -> pts_low
+       - Q90 ceiling   (quantile_alpha=0.90)       -> pts_high
+     This gives confidence intervals: "Salah: 6.2 pts | range 2.8-13.1"
 
-  🟡 MEDIUM IMPACT — FEATURE ENGINEERING:
-  4. Transfer Momentum — transfers_in_event / transfers_out_event added as
+  MEDIUM IMPACT -- FEATURE ENGINEERING:
+  4. Transfer Momentum -- transfers_in_event / transfers_out_event added as
      info columns to pred_df (crowd-intelligence context). Not model features
      since per-GW historical data isn't available from FPL element-summary.
-  5. Ownership — selected_by_percent (selected_pct) added as inference feature
-     in build_current_features only. NOT a training feature — FPL API only
-     exposes current-week ownership, so using it during training would leak
-     today's value into historical GW rows (data leakage). At inference time
-     it's valid because we're predicting the next GW using today's ownership.
+  5. Ownership -- selected_by_percent (selected_pct) used as inference column
+     in build_current_features only. NOT a training feature anywhere:
+       - Main models: excluded from FEATURE_COLS (always was).
+       - Price model: excluded from PRICE_FEATURES (fix v5.1 -- previously
+         included, causing data leakage: all historical GW rows for a player
+         were stamped with today's ownership, training the price model to
+         predict past price changes from future ownership data).
+     At inference time selected_pct is valid because pred_df is built from
+     today's bootstrap snapshot.
 
-  🟢 ROBUSTNESS:
-  6. Incremental Cache — checks if cache already covers current_gw before
+  ROBUSTNESS:
+  6. Incremental Cache -- checks if cache already covers current_gw before
      hitting the API. Also detects missing v5 columns and forces refresh.
-  7. Model Versioning — saves fpl_model_gw{N}.pkl alongside fpl_model.pkl
+  7. Model Versioning -- saves fpl_model_gw{N}.pkl alongside fpl_model.pkl
      so you can compare week-over-week model quality without overwriting.
+  8. CV Degradation Detection + Naive Blend (fix v5.1) -- train_models() now
+     computes cv_degraded=True when a position's CV R^2 < 0, meaning the
+     model generalises worse than a mean predictor on cross-validation folds.
+     When cv_degraded=True, build_current_features blends predictions at
+     60% model / 40% naive roll3_pts baseline to suppress overconfident
+     outputs. A WARNING is emitted at training time. The model is NOT
+     discarded (it may still beat roll3_pts on the single test split),
+     but its outputs are conservatively tempered.
 
-  🧩 EXTENDED MODELLING:
-  8. Multi-Output Component Models — separate XGBoost models predict each
+  EXTENDED MODELLING:
+  9. Multi-Output Component Models -- separate XGBoost models predict each
      FPL scoring component (goals, assists, clean_sheets, bonus) per position.
      Components converted to FPL pts using official scoring rules. Stored as
      pred_goals, pred_assists, pred_clean, pred_bonus, pts_from_components.
      Final predicted_pts = blend of direct model (60%) + components (40%).
-  9. Price Rise/Fall Prediction — standalone XGBoost model trained to predict
-     next-GW price change from form, transfers, ownership, current price.
+  10. Price Rise/Fall Prediction -- standalone XGBoost model trained to predict
+     next-GW price change from form, transfers, current price.
      Output: predicted_price_change column in pred_df.
+     NOTE: selected_pct removed from PRICE_FEATURES in v5.1 (data leakage fix).
 
   BACKWARD COMPATIBILITY:
   - Model dict keys rmse, r2, model, features all preserved
-  - train_model() wrapper untouched — Phases 2/3/4 unaffected
+  - cv_degraded key added to model dict (new in v5.1; False if absent = safe default)
+  - train_model() wrapper untouched -- Phases 2/3/4 unaffected
   - build_current_features() signature unchanged
 
 Run normally (uses cache):
@@ -67,13 +81,33 @@ import pickle
 import time
 import hashlib
 from datetime import datetime, timedelta
-import xgboost as xgb
-import shap
-import matplotlib
-matplotlib.use("Agg")           # non-interactive backend — safe everywhere
-import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split, TimeSeriesSplit
+from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.ensemble import GradientBoostingRegressor
+
+try:
+    import xgboost as xgb
+    HAS_XGBOOST = True
+except Exception:
+    xgb = None
+    HAS_XGBOOST = False
+
+try:
+    import shap
+    HAS_SHAP = True
+except Exception:
+    shap = None
+    HAS_SHAP = False
+
+try:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    HAS_MATPLOTLIB = True
+except Exception:
+    matplotlib = None
+    plt = None
+    HAS_MATPLOTLIB = False
 
 try:
     from db.team_cache import get_team_cache, upsert_team_cache_ok, upsert_team_cache_failed
@@ -84,9 +118,9 @@ except Exception:
     upsert_team_cache_failed = None
     HAS_TEAM_DB_CACHE = False
 
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 # 0. CONFIG + LOGGING
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 
 try:
     from config import (
@@ -125,16 +159,83 @@ log = logging.getLogger(__name__)
 
 BASE_URL = "https://fantasy.premierleague.com/api"
 
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 # 1. API HELPERS
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
+
+def _new_regressor(kind: str = "mean"):
+    """
+    Unified regressor factory.
+    Uses XGBoost when available; otherwise falls back to sklearn GBDT variants.
+    """
+    if HAS_XGBOOST:
+        if kind == "q10":
+            return xgb.XGBRegressor(
+                n_estimators=200, learning_rate=0.05, max_depth=4,
+                subsample=0.8, colsample_bytree=0.8,
+                objective="reg:quantileerror", quantile_alpha=0.10,
+                random_state=RANDOM_STATE, verbosity=0,
+                early_stopping_rounds=20,
+            )
+        if kind == "q90":
+            return xgb.XGBRegressor(
+                n_estimators=200, learning_rate=0.05, max_depth=4,
+                subsample=0.8, colsample_bytree=0.8,
+                objective="reg:quantileerror", quantile_alpha=0.90,
+                random_state=RANDOM_STATE, verbosity=0,
+                early_stopping_rounds=20,
+            )
+        return xgb.XGBRegressor(
+            n_estimators=300, learning_rate=0.05, max_depth=4,
+            subsample=0.8, colsample_bytree=0.8,
+            random_state=RANDOM_STATE, verbosity=0,
+            early_stopping_rounds=20,
+        )
+
+    if kind == "q10":
+        return GradientBoostingRegressor(
+            loss="quantile", alpha=0.10, n_estimators=220,
+            learning_rate=0.05, max_depth=3, random_state=RANDOM_STATE,
+        )
+    if kind == "q90":
+        return GradientBoostingRegressor(
+            loss="quantile", alpha=0.90, n_estimators=220,
+            learning_rate=0.05, max_depth=3, random_state=RANDOM_STATE,
+        )
+    return GradientBoostingRegressor(
+        loss="squared_error", n_estimators=260,
+        learning_rate=0.05, max_depth=3, random_state=RANDOM_STATE,
+    )
+
+
+def _fit_regressor(model, X_train, y_train, X_test=None, y_test=None):
+    """Fit helper: uses eval_set only for XGBoost-compatible estimators."""
+    has_valid_eval = (
+        X_test is not None
+        and y_test is not None
+        and len(X_test) > 0
+        and len(y_test) > 0
+    )
+    if HAS_XGBOOST:
+        # XGBoost raises if early stopping is enabled without a validation set.
+        # Fallback: disable early stopping and fit on train only.
+        if has_valid_eval:
+            model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
+        else:
+            try:
+                model.set_params(early_stopping_rounds=None)
+            except Exception:
+                pass
+            model.fit(X_train, y_train)
+    else:
+        model.fit(X_train, y_train)
+    return model
 
 def fetch_bootstrap() -> dict:
-    """Master FPL data — players, teams, positions, events."""
+    """Master FPL data - players, teams, positions, events."""
     r = requests.get(f"{BASE_URL}/bootstrap-static/")
     r.raise_for_status()
     return r.json()
-
 
 def fetch_player_history(player_id: int, retries: int = 1) -> list:
     """Per-gameweek history for a single player. Retries once on timeout."""
@@ -169,8 +270,8 @@ def fetch_current_gw(bootstrap: dict) -> int:
     """
     Returns the true current/live gameweek.
       1. is_current == True
-      2. is_next == True  → current = next - 1
-      3. Fallback         → last finished GW
+      2. is_next == True  †’ current = next - 1
+      3. Fallback         †’ last finished GW
     """
     events = bootstrap["events"]
     for event in events:
@@ -223,7 +324,7 @@ def fetch_transfer_info(team_id: int, current_gw: int) -> dict:
         elif transfer_cost == 0:
             status = "Free transfer already used this GW"
         else:
-            status = f"{transfers_made} transfers made — {transfer_cost} pt hit taken"
+            status = f"{transfers_made} transfers made ” {transfer_cost} pt hit taken"
 
         payload = {
             "bank_balance":    bank_balance,
@@ -243,17 +344,17 @@ def fetch_transfer_info(team_id: int, current_gw: int) -> dict:
             "transfer_status": "Unknown (defaulting to 1 free transfer)",
         }
 
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 # 2. OPPONENT ENCODING (HASH-BASED)
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 
 def encode_opponent(team_id) -> int:
-    """Hash-based encoding — never breaks on new/unknown teams."""
+    """Hash-based encoding ” never breaks on new/unknown teams."""
     return int(hashlib.md5(str(team_id).encode()).hexdigest(), 16) % 1000
 
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 # 3. OPPONENT STRENGTH MAP
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 
 def build_opponent_strength_map(history_df: pd.DataFrame) -> dict:
     """Map: opponent_team_id -> avg goals conceded per game."""
@@ -266,11 +367,11 @@ def build_opponent_strength_map(history_df: pd.DataFrame) -> dict:
         .to_dict()
     )
 
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 # 4. FPL SCORING CONSTANTS
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 # Used by the multi-output component model to convert
-# predicted goals/assists/clean/bonus → FPL points.
+# predicted goals/assists/clean/bonus †’ FPL points.
 
 GOAL_PTS = {
     "Goalkeeper": 6,
@@ -286,23 +387,23 @@ CLEAN_PTS = {
     "Forward":    0,
 }
 MINS_PTS_FULL    = 2    # 60+ minutes played
-MINS_PTS_PART    = 1    # 1–59 minutes played
+MINS_PTS_PART    = 1    # 1“59 minutes played
 
 # New-column sentinel for incremental cache check
 _V5_REQUIRED_COLS = ["ewm3_pts", "ewm5_pts", "selected_pct"]
 
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 # 5. BUILD HISTORICAL DATASET
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 
 def rolling_avg(series: pd.Series, window: int) -> pd.Series:
-    """Shift-then-roll — prevents leaking current GW into features."""
+    """Shift-then-roll ” prevents leaking current GW into features."""
     return series.shift(1).rolling(window, min_periods=1).mean()
 
 
 def ewm_avg(series: pd.Series, span: int) -> pd.Series:
     """
-    Shift-then-EWMA — exponentially weighted moving average.
+    Shift-then-EWMA ” exponentially weighted moving average.
     More recent GWs carry higher weight than older ones.
     shift(1) prevents the current row from leaking into its own feature.
     """
@@ -350,7 +451,7 @@ def _fetch_fresh_history(bootstrap: dict,
         df_h = pd.DataFrame(history)
         df_h = df_h.sort_values("round").reset_index(drop=True)
 
-        # ── Rolling form features (equal weight) ──────────────────
+        # ”” Rolling form features (equal weight) ””””””””””””””””””
         df_h["roll3_pts"]        = rolling_avg(df_h["total_points"],             3)
         df_h["roll5_pts"]        = rolling_avg(df_h["total_points"],             5)
         df_h["roll3_mins"]       = rolling_avg(df_h["minutes"],                  3)
@@ -371,8 +472,8 @@ def _fetch_fresh_history(bootstrap: dict,
             else pd.Series(0.0, index=df_h.index), 3
         )
 
-        # ── EWMA form features (recency-weighted) ─────────────────
-        # More predictive of short-term form — last week matters most.
+        # ”” EWMA form features (recency-weighted) ”””””””””””””””””
+        # More predictive of short-term form ” last week matters most.
         df_h["ewm3_pts"]        = ewm_avg(df_h["total_points"],             3)
         df_h["ewm5_pts"]        = ewm_avg(df_h["total_points"],             5)
         df_h["ewm3_mins"]       = ewm_avg(df_h["minutes"],                  3)
@@ -381,7 +482,7 @@ def _fetch_fresh_history(bootstrap: dict,
         df_h["ewm3_threat"]     = ewm_avg(df_h["threat"].astype(float),     3)
         df_h["ewm3_creativity"] = ewm_avg(df_h["creativity"].astype(float), 3)
 
-        # ── Derived features ──────────────────────────────────────
+        # ”” Derived features ””””””””””””””””””””””””””””””””””””””
         df_h["games_played"] = (
             (df_h["minutes"] > 0).astype(int)
             .shift(1).rolling(5, min_periods=1).sum()
@@ -406,7 +507,7 @@ def _fetch_fresh_history(bootstrap: dict,
         df_h["opponent_encoded"] = df_h["opponent_team"].apply(encode_opponent)
         df_h["gw_number"]        = df_h["round"]
 
-        # ── Static features ───────────────────────────────────────
+        # ”” Static features ”””””””””””””””””””””””””””””””””””””””
         df_h["player_id"]     = pid
         df_h["player_name"]   = f"{player['first_name']} {player['second_name']}"
         df_h["position"]      = pos_name
@@ -439,7 +540,7 @@ def check_cache_staleness(cache_file: str, max_age_days: int) -> bool:
     age = datetime.now() - datetime.fromtimestamp(os.path.getmtime(cache_file))
     if age > timedelta(days=max_age_days):
         log.warning(
-            f"⚠️  Cache is {age.days} days old (max {max_age_days}). "
+            f"š ï¸  Cache is {age.days} days old (max {max_age_days}). "
             f"Run with --refresh to update."
         )
         return True
@@ -472,63 +573,63 @@ def build_player_history_df(bootstrap: dict,
     if not refresh and os.path.exists(CACHE_FILE):
         cached_df = pd.read_csv(CACHE_FILE)
 
-        # Schema check — v5 adds new columns; old cache won't have them
+        # Schema check ” v5 adds new columns; old cache won't have them
         missing_v5 = [c for c in _V5_REQUIRED_COLS if c not in cached_df.columns]
         if missing_v5:
-            log.info(f"♻️  Cache missing v5 columns {missing_v5} — refreshing...")
+            log.info(f"™»ï¸  Cache missing v5 columns {missing_v5} ” refreshing...")
         elif _cache_is_current(cached_df, current_gw):
             log.info(
-                f"✅ Cache is current (GW{current_gw}) — "
+                f"œ… Cache is current (GW{current_gw}) ” "
                 f"{len(cached_df)} rows, {cached_df['player_id'].nunique()} players."
             )
             return cached_df
         else:
             max_cached = int(cached_df["round"].max()) if not cached_df.empty else 0
             log.info(
-                f"⚡ Cache at GW{max_cached}, current is GW{current_gw} "
-                f"→ fetching fresh data..."
+                f"š¡ Cache at GW{max_cached}, current is GW{current_gw} "
+                f"†’ fetching fresh data..."
             )
     else:
         log.info(
-            "🔄 --refresh flag set." if refresh
-            else "📡 No cache found — fetching from API..."
+            "ðŸ”„ --refresh flag set." if refresh
+            else "ðŸ“¡ No cache found ” fetching from API..."
         )
 
     df = _fetch_fresh_history(bootstrap, max_players)
     df.to_csv(CACHE_FILE, index=False)
-    log.info(f"💾 Cached → {CACHE_FILE}")
+    log.info(f"ðŸ’¾ Cached †’ {CACHE_FILE}")
     return df
 
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 # 6. POSITION-SPECIFIC FEATURE SETS
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 
 FEATURES_COMMON = [
-    # ── Rolling (equal-weight) form ───────────────────────────────
+    # ”” Rolling (equal-weight) form ”””””””””””””””””””””””””””””””
     "roll3_pts",
     "roll5_pts",
     "roll3_mins",
-    # ── EWMA (recency-weighted) form ──────────────────────────────
+    # ”” EWMA (recency-weighted) form ””””””””””””””””””””””””””””””
     "ewm3_pts",
     "ewm5_pts",
     "ewm3_mins",
-    # ── Derived / efficiency ─────────────────────────────────────
+    # ”” Derived / efficiency ”””””””””””””””””””””””””””””””””””””
     "pts_per_90",
     "roll3_bonus",
     "roll3_influence",
-    # ── Fixture context ───────────────────────────────────────────
+    # ”” Fixture context ”””””””””””””””””””””””””””””””””””””””””””
     "is_home",
     "opponent_encoded",
     "opp_strength",
     "difficulty",
-    # ── Player meta ──────────────────────────────────────────────
+    # ”” Player meta ””””””””””””””””””””””””””””””””””””””””””””””
     "price",
     "games_played",
     "home_ratio",
     "price_change",
     "gw_number",
     # NOTE: selected_pct (ownership %) intentionally excluded from training
-    # features. FPL API only exposes current-week ownership — using it during
+    # features. FPL API only exposes current-week ownership ” using it during
     # training would assign today's value to all historical GW rows, leaking
     # future data into the past. It IS used at inference time in
     # build_current_features because at that point "current" is correct.
@@ -568,7 +669,7 @@ POSITION_FEATURE_MAP = {
     "Forward":    FEATURES_FWD,
 }
 
-# Stable ordered union — downstream phases use this for pkl compatibility
+# Stable ordered union ” downstream phases use this for pkl compatibility
 _seen = set()
 FEATURE_COLS = []
 for _f in (FEATURES_GK + FEATURES_DEF + FEATURES_MID + FEATURES_FWD):
@@ -576,11 +677,11 @@ for _f in (FEATURES_GK + FEATURES_DEF + FEATURES_MID + FEATURES_FWD):
         FEATURE_COLS.append(_f)
         _seen.add(_f)
 
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 # 7. PREPARE FEATURES (TEMPORAL + CV)
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 
-def prepare_features_for_position(df: pd.DataFrame, position: str) -> tuple:
+def prepare_features_for_position(df: pd.DataFrame, position: str) -> tuple | None:
     """
     Prepare features for a specific position with:
       - Temporal train/test split (no data leakage)
@@ -602,17 +703,18 @@ def prepare_features_for_position(df: pd.DataFrame, position: str) -> tuple:
     pos_df = pos_df.sort_values("gw_number").reset_index(drop=True)
 
     max_gw   = int(pos_df["gw_number"].max())
-    train_df = pos_df[pos_df["gw_number"] >= max_gw - ROLLING_TRAIN_WINDOW]
+    train_df = pos_df[
+        (pos_df["gw_number"] >= max_gw - ROLLING_TRAIN_WINDOW)
+        & (pos_df["gw_number"] <= max_gw - 1)
+    ]
     test_df  = pos_df[pos_df["gw_number"] == max_gw]
 
     if len(train_df) < 50 or len(test_df) < 10:
         log.warning(
-            f"Not enough data for temporal split ({position}), "
-            f"falling back to random split."
+            f"Not enough data for temporal split ({position}); skipping this position "
+            f"(train={len(train_df)}, test={len(test_df)})."
         )
-        train_df, test_df = train_test_split(
-            pos_df, test_size=0.2, random_state=RANDOM_STATE
-        )
+        return None
 
     # 3-fold TimeSeriesSplit CV on training window only
     cv_rmse_scores, cv_r2_scores = [], []
@@ -623,12 +725,8 @@ def prepare_features_for_position(df: pd.DataFrame, position: str) -> tuple:
     for tr_idx, va_idx in tscv.split(X_cv):
         if len(tr_idx) < 10 or len(va_idx) < 5:
             continue
-        _m = xgb.XGBRegressor(
-            n_estimators=200, learning_rate=0.05, max_depth=4,
-            subsample=0.8, colsample_bytree=0.8,
-            random_state=RANDOM_STATE, verbosity=0,
-        )
-        _m.fit(X_cv[tr_idx], y_cv[tr_idx])
+        _m = _new_regressor("mean")
+        _fit_regressor(_m, X_cv[tr_idx], y_cv[tr_idx], X_cv[va_idx], y_cv[va_idx])
         _preds = np.clip(_m.predict(X_cv[va_idx]), 0, None)
         cv_rmse_scores.append(np.sqrt(mean_squared_error(y_cv[va_idx], _preds)))
         cv_r2_scores.append(r2_score(y_cv[va_idx], _preds))
@@ -646,26 +744,29 @@ def prepare_features_for_position(df: pd.DataFrame, position: str) -> tuple:
         cv_r2,
     )
 
-# ─────────────────────────────────────────
+# Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬
 # 8. MULTI-OUTPUT COMPONENT MODELS
-# ─────────────────────────────────────────
+# Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬
 
 COMPONENT_TARGETS = ["goals_scored", "assists", "clean_sheets", "bonus"]
 
 
-def _temporal_train_test_split(pos_df: pd.DataFrame,
-                                feature_cols: list,
-                                target_col: str) -> tuple | None:
+def _temporal_train_test_split(
+    pos_df: pd.DataFrame,
+    feature_cols: list,
+    target_col: str,
+    min_train_rows: int = 30,
+    min_test_rows: int = 5,
+) -> tuple | None:
     """
     Shared temporal train/test split helper used by both the main position
-    models and the component models — ensures consistent split strategy.
+    models and the component models Ã¢‚¬ ensures consistent split strategy.
 
     Logic mirrors prepare_features_for_position:
       train = GWs in rolling ROLLING_TRAIN_WINDOW ending at max_gw-1
       test  = most recent GW (held-out)
 
-    Falls back to 80/20 random split if temporal data is insufficient.
-    Returns None if there is not enough data at all.
+    Returns None when temporal data is insufficient.
     """
     df = pos_df.sort_values("gw_number").reset_index(drop=True)
     df = df.dropna(subset=[target_col, "gw_number"]).copy()
@@ -675,15 +776,18 @@ def _temporal_train_test_split(pos_df: pd.DataFrame,
             df[col] = 0.0
     df[feature_cols] = df[feature_cols].fillna(0)
 
-    if len(df) < 30:
+    if len(df) < int(min_train_rows + min_test_rows):
         return None
 
     max_gw   = int(df["gw_number"].max())
-    train_df = df[df["gw_number"] >= max_gw - ROLLING_TRAIN_WINDOW]
+    train_df = df[
+        (df["gw_number"] >= max_gw - ROLLING_TRAIN_WINDOW)
+        & (df["gw_number"] <= max_gw - 1)
+    ]
     test_df  = df[df["gw_number"] == max_gw]
 
-    if len(train_df) < 30 or len(test_df) < 5:
-        train_df, test_df = train_test_split(df, test_size=0.2, random_state=RANDOM_STATE)
+    if len(train_df) < int(min_train_rows) or len(test_df) < int(min_test_rows):
+        return None
 
     return (
         train_df[feature_cols],
@@ -699,7 +803,7 @@ def train_component_models(df: pd.DataFrame) -> dict:
     Separate models let us explain WHERE predicted points come from.
 
     Uses the same temporal train/test split strategy as the main models
-    via _temporal_train_test_split — consistent, no leakage.
+    via _temporal_train_test_split Ã¢‚¬ consistent, no leakage.
 
     Returns:
       {
@@ -712,7 +816,7 @@ def train_component_models(df: pd.DataFrame) -> dict:
         ...
       }
     """
-    log.info("🧩 Training multi-output component models...")
+    log.info("Ã°Å¸§© Training multi-output component models...")
     component_models: dict = {}
 
     for position in ["Goalkeeper", "Defender", "Midfielder", "Forward"]:
@@ -731,22 +835,14 @@ def train_component_models(df: pd.DataFrame) -> dict:
 
             X_train, X_test, y_train, y_test = split
 
-            model = xgb.XGBRegressor(
-                n_estimators=200, learning_rate=0.05, max_depth=3,
-                subsample=0.8, colsample_bytree=0.8,
-                random_state=RANDOM_STATE, verbosity=0,
-                early_stopping_rounds=20,
-            )
-            model.fit(
-                X_train, y_train,
-                eval_set=[(X_test, y_test)],
-                verbose=False,
-            )
+            model = _new_regressor("mean")
+            _fit_regressor(model, X_train, y_train, X_test, y_test)
 
             preds = np.clip(model.predict(X_test), 0, None)
             rmse  = np.sqrt(mean_squared_error(y_test, preds))
-            log.info(f"  Component [{position:10s} | {target:15s}]: RMSE={rmse:.3f}  "
-                     f"best_iter={model.best_iteration}")
+            best_iter = getattr(model, "best_iteration", None)
+            iter_txt = f"best_iter={best_iter}" if best_iter is not None else "best_iter=n/a"
+            log.info(f"  Component [{position:10s} | {target:15s}]: RMSE={rmse:.3f}  {iter_txt}")
 
             component_models[position][target] = model
 
@@ -771,11 +867,11 @@ def predict_component_pts(component_models: dict,
       pts_from_components
 
     FPL scoring applied:
-      goals  × GOAL_PTS[position]
-      assists × 3
-      clean  × CLEAN_PTS[position]  (only if avg mins ≥ 60)
+      goals  Ã— GOAL_PTS[position]
+      assists Ã— 3
+      clean  Ã— CLEAN_PTS[position]  (only if avg mins ‰¥ 60)
       bonus  as-is
-      minutes bonus (2 pts if roll3_mins ≥ 60, 1 pt if ≥ 1)
+      minutes bonus (2 pts if roll3_mins ‰¥ 60, 1 pt if ‰¥ 1)
     """
     pred_df = pred_df.copy()
     for col in ["pred_goals", "pred_assists", "pred_clean", "pred_bonus",
@@ -815,7 +911,7 @@ def predict_component_pts(component_models: dict,
         pred_df.loc[mask, "pred_bonus"]           = bonus_pred.round(2)
         pred_df.loc[mask, "pts_from_components"]  = component_total.round(2)
 
-    # Blank GW → zero all component columns
+    # Blank GW †’ zero all component columns
     blank_mask = pred_df["is_blank"]
     for col in ["pred_goals", "pred_assists", "pred_clean", "pred_bonus",
                 "pts_from_components"]:
@@ -823,20 +919,27 @@ def predict_component_pts(component_models: dict,
 
     return pred_df
 
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 # 9. PRICE RISE/FALL PREDICTION MODEL
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 
 PRICE_FEATURES = [
     "roll3_pts",
     "ewm3_pts",
     "price",
-    "selected_pct",
+    # NOTE: selected_pct intentionally EXCLUDED from PRICE_FEATURES.
+    # The history DataFrame stamps all historical GW rows with the *current*
+    # week's ownership value (the only snapshot FPL exposes). Training on it
+    # would mean every past GW for a player carries today's ownership —
+    # a direct look-ahead leak from the present into history.
+    # selected_pct is valid at inference time (add_price_predictions) because
+    # pred_df is built from today's bootstrap, but PRICE_FEATURES is shared
+    # between training and inference so it must contain only leakage-free cols.
     "games_played",
     "roll3_goals",
     "roll3_assists",
     "gw_number",
-    "price_change",   # recent price momentum
+    "price_change",   # recent price momentum (per-GW diff, no leakage)
 ]
 
 
@@ -850,7 +953,7 @@ def train_price_model(df: pd.DataFrame) -> dict | None:
     Target: next_price_change = price_change shifted back one GW per player.
     Features: form, ownership, current price, recent transfers.
     """
-    log.info("💰 Training price rise/fall prediction model...")
+    log.info("Ã°Å¸™° Training price rise/fall prediction model...")
 
     price_df = df.copy()
     price_df = price_df.sort_values(["player_id", "gw_number"])
@@ -871,26 +974,28 @@ def train_price_model(df: pd.DataFrame) -> dict | None:
     price_df = price_df.sort_values("gw_number").reset_index(drop=True)
 
     if len(price_df) < 100:
-        log.warning("  Not enough data for price model — skipping.")
+        log.warning("  Not enough data for price model Ã¢‚¬ skipping.")
         return None
 
-    split_idx = int(len(price_df) * 0.85)
-    X_train = price_df[PRICE_FEATURES].iloc[:split_idx]
-    X_test  = price_df[PRICE_FEATURES].iloc[split_idx:]
-    y_train = price_df["next_price_change"].iloc[:split_idx]
-    y_test  = price_df["next_price_change"].iloc[split_idx:]
-
-    model = xgb.XGBRegressor(
-        n_estimators=200, learning_rate=0.05, max_depth=3,
-        subsample=0.8, colsample_bytree=0.8,
-        random_state=RANDOM_STATE, verbosity=0,
+    split = _temporal_train_test_split(
+        price_df,
+        PRICE_FEATURES,
+        "next_price_change",
+        min_train_rows=80,
+        min_test_rows=15,
     )
-    model.fit(X_train, y_train)
+    if split is None:
+        log.warning("  Not enough temporal data for price model - skipping.")
+        return None
+    X_train, X_test, y_train, y_test = split
+
+    model = _new_regressor("mean")
+    _fit_regressor(model, X_train, y_train, X_test, y_test)
 
     preds = model.predict(X_test)
     rmse  = float(np.sqrt(mean_squared_error(y_test, preds)))
     r2    = float(r2_score(y_test, preds))
-    log.info(f"  Price model: RMSE={rmse:.4f}  R²={r2:.3f}  "
+    log.info(f"  Price model: RMSE={rmse:.4f}  RÃ‚²={r2:.3f}  "
              f"(train={len(X_train)}, test={len(X_test)})")
 
     return {"model": model, "features": PRICE_FEATURES, "rmse": rmse, "r2": r2}
@@ -901,7 +1006,7 @@ def add_price_predictions(price_model_info: dict | None,
     """
     Adds predicted_price_change to pred_df.
 
-    FPL prices move in discrete 0.1M steps — continuous model output is
+    FPL prices move in discrete 0.1M steps ” continuous model output is
     snapped to the nearest 0.1 and clipped to [-0.3, +0.3]:
       - +0.3M is the practical upper bound (very rare for a player to rise more)
       - -0.3M similarly for falls
@@ -924,25 +1029,25 @@ def add_price_predictions(price_model_info: dict | None,
     raw_preds = model.predict(pred_df[feats].fillna(0))
 
     # Snap to nearest 0.1M step using round-half-up (not numpy banker's rounding).
-    # np.round uses banker's rounding: 0.5 → 0 (rounds to even), which would
-    # incorrectly snap +0.05 → 0.0. np.floor(x + 0.5) gives standard rounding.
+    # np.round uses banker's rounding: 0.5 †’ 0 (rounds to even), which would
+    # incorrectly snap +0.05 †’ 0.0. np.floor(x + 0.5) gives standard rounding.
     snapped = np.sign(raw_preds) * np.floor(np.abs(raw_preds) / 0.1 + 0.5) * 0.1
     clipped = np.clip(snapped, -0.3, 0.3)
 
     pred_df["predicted_price_change"] = clipped
     return pred_df
 
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 # 10. TRAIN POSITION MODELS
 #     XGBoost + Quantile Regression + SHAP
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 
 def train_models(df: pd.DataFrame) -> dict:
     """
     Trains THREE XGBoost models per position:
-      median model   (sq error)          → predicted_pts
-      q10 floor      (quantile α=0.10)   → pts_low
-      q90 ceiling    (quantile α=0.90)   → pts_high
+      median model   (sq error)          Ã¢ ™ predicted_pts
+      q10 floor      (quantile ÃŽ±=0.10)   Ã¢ ™ pts_low
+      q90 ceiling    (quantile ÃŽ±=0.90)   Ã¢ ™ pts_high
 
     Plus: SHAP feature importance, 3-fold CV metrics, model_metrics.json.
 
@@ -957,6 +1062,8 @@ def train_models(df: pd.DataFrame) -> dict:
             "r2":                float,
             "cv_rmse":           float,
             "cv_r2":             float,
+            "naive_baseline_rmse": float,
+            "beats_baseline":    bool,
             "shap_top_features": {feat: shap_val, ...},
         },
         ...
@@ -968,82 +1075,92 @@ def train_models(df: pd.DataFrame) -> dict:
     for position in ["Goalkeeper", "Defender", "Midfielder", "Forward"]:
         log.info(f"  Training {position} model...")
 
-        X_train, X_test, y_train, y_test, feature_cols, cv_rmse, cv_r2 = \
-            prepare_features_for_position(df, position)
+        split = prepare_features_for_position(df, position)
+        if split is None:
+            log.warning(f"  Not enough temporal data for {position}, skipping.")
+            continue
+        X_train, X_test, y_train, y_test, feature_cols, cv_rmse, cv_r2 = split
 
         if len(X_train) < 10:
             log.warning(f"  Not enough data for {position}, skipping.")
             continue
 
-        # ── Median model (primary prediction) ─────────────────────
+        # Ã¢‚¬Ã¢‚¬ Median model (primary prediction) Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬
         # early_stopping_rounds guards against overfitting on small
         # position datasets (especially GK/FWD with ~100-150 rows).
-        model = xgb.XGBRegressor(
-            n_estimators=300, learning_rate=0.05, max_depth=4,
-            subsample=0.8, colsample_bytree=0.8,
-            random_state=RANDOM_STATE, verbosity=0,
-            early_stopping_rounds=20,
-        )
-        model.fit(
-            X_train, y_train,
-            eval_set=[(X_test, y_test)],
-            verbose=False,
-        )
+        model = _new_regressor("mean")
+        _fit_regressor(model, X_train, y_train, X_test, y_test)
 
         y_pred = np.clip(model.predict(X_test), 0, None)
         rmse   = float(np.sqrt(mean_squared_error(y_test, y_pred)))
         r2     = float(r2_score(y_test, y_pred))
+        # Naive baseline: rolling 3-game average points (already shifted, no leakage).
+        naive_pred = np.clip(
+            pd.to_numeric(X_test.get("roll3_pts", 0.0), errors="coerce").fillna(0.0).values,
+            0,
+            None,
+        )
+        naive_baseline_rmse = float(np.sqrt(mean_squared_error(y_test, naive_pred)))
+        beats_baseline = bool(rmse < naive_baseline_rmse)
 
-        # ── Quantile models (floor / ceiling interval) ─────────────
-        # Trains on same data as median — only objective differs.
+        # Ã¢‚¬Ã¢‚¬ Quantile models (floor / ceiling interval) Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬
+        # Trains on same data as median Ã¢‚¬ only objective differs.
         # Gives us: "Floor: 2.1 pts | Expected: 6.2 pts | Ceiling: 13.4 pts"
-        q10_model = xgb.XGBRegressor(
-            n_estimators=200, learning_rate=0.05, max_depth=4,
-            subsample=0.8, colsample_bytree=0.8,
-            objective="reg:quantileerror", quantile_alpha=0.10,
-            random_state=RANDOM_STATE, verbosity=0,
-            early_stopping_rounds=20,
-        )
-        q90_model = xgb.XGBRegressor(
-            n_estimators=200, learning_rate=0.05, max_depth=4,
-            subsample=0.8, colsample_bytree=0.8,
-            objective="reg:quantileerror", quantile_alpha=0.90,
-            random_state=RANDOM_STATE, verbosity=0,
-            early_stopping_rounds=20,
-        )
-        q10_model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
-        q90_model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
+        q10_model = _new_regressor("q10")
+        q90_model = _new_regressor("q90")
+        _fit_regressor(q10_model, X_train, y_train, X_test, y_test)
+        _fit_regressor(q90_model, X_train, y_train, X_test, y_test)
 
-        cv_str = (f"  CV-RMSE={cv_rmse:.3f}  CV-R²={cv_r2:.3f}"
+        cv_str = (f"  CV-RMSE={cv_rmse:.3f}  CV-R\xc2\xb2={cv_r2:.3f}"
                   if cv_rmse is not None else "")
         log.info(
-            f"  {position}: RMSE={rmse:.3f}  R²={r2:.3f}{cv_str}  "
+            f"  {position}: RMSE={rmse:.3f}  R\xc2\xb2={r2:.3f}{cv_str}  "
             f"(train={len(X_train)}, test={len(X_test)})"
         )
 
-        # ── SHAP feature importance ────────────────────────────────
+        # cv_degraded: model performs worse than predicting the mean on CV folds.
+        # A negative CV R² means the model has not learned a reliable generalised
+        # signal — its cross-validated performance is worse than a flat mean
+        # predictor. This does NOT automatically discard the model (it may still
+        # beat the naive roll3_pts baseline on the single held-out test split),
+        # but it flags that predictions for this position are structurally weak
+        # and will be blended 60/40 with the naive roll3_pts baseline inside
+        # build_current_features to suppress overconfident outputs.
+        cv_degraded = bool(cv_r2 is not None and cv_r2 < 0.0)
+        if cv_degraded:
+            log.warning(
+                f"  *** CV DEGRADED — {position} CV R2 = {cv_r2:.3f} (NEGATIVE). "
+                f"Model generalises worse than a mean predictor in cross-validation. "
+                f"Predictions will be blended 60%% model / 40%% naive roll3_pts "
+                f"in build_current_features. Consider reviewing features or "
+                f"expanding training data for this position. ***"
+            )
+
+        # Ã¢‚¬Ã¢‚¬ SHAP feature importance Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬Ã¢‚¬
         shap_top: dict = {}
-        try:
-            explainer   = shap.TreeExplainer(model)
-            shap_values = explainer.shap_values(X_test)
-            mean_abs    = np.abs(shap_values).mean(axis=0)
-            shap_series = pd.Series(mean_abs, index=feature_cols)
-            top5        = shap_series.sort_values(ascending=False).head(5)
-            shap_top    = {k: round(float(v), 4) for k, v in top5.items()}
-            log.info(f"  SHAP top features ({position}): {shap_top}")
+        if HAS_SHAP and HAS_MATPLOTLIB:
+            try:
+                explainer   = shap.TreeExplainer(model)
+                shap_values = explainer.shap_values(X_test)
+                mean_abs    = np.abs(shap_values).mean(axis=0)
+                shap_series = pd.Series(mean_abs, index=feature_cols)
+                top5        = shap_series.sort_values(ascending=False).head(5)
+                shap_top    = {k: round(float(v), 4) for k, v in top5.items()}
+                log.info(f"  SHAP top features ({position}): {shap_top}")
 
-            fig, ax = plt.subplots(figsize=(7, 4))
-            top5.sort_values().plot(kind="barh", ax=ax, color="#3b82f6")
-            ax.set_title(f"SHAP Feature Importance — {position}", fontsize=13)
-            ax.set_xlabel("Mean |SHAP value|  (impact on predicted pts)")
-            ax.tick_params(labelsize=9)
-            plt.tight_layout()
-            fig.savefig(f"shap_{position}.png", dpi=120)
-            plt.close(fig)
-            log.info(f"  SHAP chart saved → shap_{position}.png")
-
-        except Exception as e:
-            log.warning(f"  SHAP failed for {position}: {e}")
+                fig, ax = plt.subplots(figsize=(7, 4))
+                top5.sort_values().plot(kind="barh", ax=ax, color="#3b82f6")
+                ax.set_title(f"SHAP Feature Importance - {position}", fontsize=13)
+                ax.set_xlabel("Mean |SHAP value|  (impact on predicted pts)")
+                ax.tick_params(labelsize=9)
+                plt.tight_layout()
+                fig.savefig(f"shap_{position}.png", dpi=120)
+                plt.close(fig)
+                log.info(f"  SHAP chart saved -> shap_{position}.png")
+            except Exception as e:
+                log.warning(f"  SHAP failed for {position}: {e}")
+        else:
+            log.info("  SHAP skipped (optional dependency unavailable).")
 
         models[position] = {
             "model":             model,
@@ -1054,6 +1171,12 @@ def train_models(df: pd.DataFrame) -> dict:
             "r2":                r2,
             "cv_rmse":           cv_rmse,
             "cv_r2":             cv_r2,
+            "naive_baseline_rmse": naive_baseline_rmse,
+            "beats_baseline":    beats_baseline,
+            # cv_degraded=True when CV R² < 0: model generalises worse than
+            # a mean predictor. Predictions will be blended with roll3_pts
+            # baseline in build_current_features when this flag is set.
+            "cv_degraded":       cv_degraded,
             "shap_top_features": shap_top,
         }
 
@@ -1062,20 +1185,59 @@ def train_models(df: pd.DataFrame) -> dict:
             "r2":                r2,
             "cv_rmse":           cv_rmse,
             "cv_r2":             cv_r2,
+            "naive_baseline_rmse": naive_baseline_rmse,
+            "beats_baseline":    beats_baseline,
+            "cv_degraded":       cv_degraded,
             "train_size":        len(X_train),
             "test_size":         len(X_test),
             "shap_top_features": shap_top,
         }
 
-    # Write model_metrics.json — dashboard reads this without re-training
+    # Write model_metrics.json Ã¢‚¬ dashboard reads this without re-training
+    # Write to CWD (legacy) AND alongside the script so precompute can find it
     try:
+        from pathlib import Path as _Path
+
+        def _read_prev_shap(_path: _Path) -> dict:
+            try:
+                if not _path.exists():
+                    return {}
+                _payload = json.loads(_path.read_text(encoding="utf-8"))
+                _positions = _payload.get("positions", {}) if isinstance(_payload, dict) else {}
+                _out = {}
+                for _pos, _info in _positions.items():
+                    if not isinstance(_info, dict):
+                        continue
+                    _shap = _info.get("shap_top_features")
+                    if isinstance(_shap, dict) and _shap:
+                        _out[str(_pos)] = {str(k): float(v) for k, v in _shap.items()}
+                return _out
+            except Exception:
+                return {}
+
+        _data_json_path = _Path(__file__).parent / "data" / "model_metrics.json"
+        _prev_shap = _read_prev_shap(_Path("model_metrics.json"))
+        if not _prev_shap:
+            _prev_shap = _read_prev_shap(_data_json_path)
+
+        for _pos, _info in all_metrics.items():
+            if not isinstance(_info, dict):
+                continue
+            if not (_info.get("shap_top_features") or {}) and _pos in _prev_shap:
+                _info["shap_top_features"] = _prev_shap[_pos]
+
         payload = {
             "generated_at": datetime.now().isoformat(timespec="seconds"),
-            "positions":    all_metrics,
+            "positions": all_metrics,
         }
+        _json_str = json.dumps(payload, indent=2)
         with open("model_metrics.json", "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
-        log.info("📊 Model metrics saved → model_metrics.json")
+            f.write(_json_str)
+        log.info("Model metrics saved -> model_metrics.json")
+        _data_dir = _Path(__file__).parent / "data"
+        if _data_dir.exists():
+            (_data_dir / "model_metrics.json").write_text(_json_str, encoding="utf-8")
+            log.info("Model metrics also saved -> data/model_metrics.json")
     except Exception as e:
         log.warning(f"Could not write model_metrics.json: {e}")
 
@@ -1090,32 +1252,32 @@ def train_model(df: pd.DataFrame) -> tuple:
     models = train_models(df)
     return models, None, None, df
 
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 # 11. xMINS PROBABILITY WEIGHTING
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 
 def compute_expected_pts(pred_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Compute expected_pts = predicted_pts × P(player plays meaningfully).
+    Compute expected_pts = predicted_pts Ã— P(player plays meaningfully).
 
-    This addresses rotation risk — the single biggest gap in naive FPL models.
+    This addresses rotation risk ” the single biggest gap in naive FPL models.
     A player predicted 8pts but who only plays 60min half the time is worth
     less than a player predicted 7pts who always starts.
 
-    P(plays effectively) = P(fit) × P(plays substantial minutes | fit)
+    P(plays effectively) = P(fit) Ã— P(plays substantial minutes | fit)
     where:
       P(fit)                = chance_of_playing / 100
       P(substantial mins)   = smoothly mapped from roll3_mins
-                              (90 min avg → 1.0, 45 min avg → 0.55, 0 → 0)
+                              (90 min avg †’ 1.0, 45 min avg †’ 0.55, 0 †’ 0)
 
     Also adds p_plays_full (raw minutes probability) for display.
     """
     chance_norm = pred_df["chance_of_playing"].clip(0, 100) / 100.0
 
     # Smooth sigmoid-like mapping from recent avg minutes to probability
-    # roll3_mins=90 → p_full≈1.0 | =60 → ≈0.72 | =30 → ≈0.22 | =0 → 0.0
+    # roll3_mins=90 †’ p_full‰ˆ1.0 | =60 †’ ‰ˆ0.72 | =30 †’ ‰ˆ0.22 | =0 †’ 0.0
     roll_mins   = pred_df["roll3_mins"].clip(0, 90)
-    p_full      = (roll_mins / 90.0) ** 0.7   # slight concave — penalises low mins hard
+    p_full      = (roll_mins / 90.0) ** 0.7   # slight concave ” penalises low mins hard
 
     # Combined: must be fit AND play meaningfully
     p_effective = chance_norm * (0.30 + 0.70 * p_full)
@@ -1126,9 +1288,9 @@ def compute_expected_pts(pred_df: pd.DataFrame) -> pd.DataFrame:
 
     return pred_df
 
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 # 12. BUILD NEXT-GW FEATURE VECTORS
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 
 def build_current_features(bootstrap: dict,
                              fixtures_df: pd.DataFrame,
@@ -1136,7 +1298,7 @@ def build_current_features(bootstrap: dict,
                              models,
                              current_gw: int,
                              my_player_ids: list = None,
-                             pos_enc=None,       # legacy — ignored
+                             pos_enc=None,       # legacy ” ignored
                              opp_enc=None) -> pd.DataFrame:
     """
     Build feature vectors for all players for the NEXT gameweek.
@@ -1152,7 +1314,7 @@ def build_current_features(bootstrap: dict,
     if my_player_ids is None:
         my_player_ids = []
 
-    # Legacy call signature from older phases — load from disk
+    # Legacy call signature from older phases ” load from disk
     if not isinstance(models, dict):
         try:
             with open("fpl_model.pkl", "rb") as f:
@@ -1160,7 +1322,7 @@ def build_current_features(bootstrap: dict,
             models = saved.get("models", {})
             log.info("Loaded models from fpl_model.pkl for compatibility.")
         except Exception:
-            log.warning("Could not load models — predictions may be 0.")
+            log.warning("Could not load models ” predictions may be 0.")
             models = {}
 
     players_raw = bootstrap["elements"]
@@ -1239,7 +1401,7 @@ def build_current_features(bootstrap: dict,
         opp_encoded  = encode_opponent(fixture["opponent_team"])
 
         rows.append({
-            # ── Identity ──────────────────────────────────────────
+            # ”” Identity ””””””””””””””””””””””””””””””””””””””””””
             "player_id":           pid,
             "player_name":         f"{player['first_name']} {player['second_name']}",
             "position":            pos_name,
@@ -1248,14 +1410,14 @@ def build_current_features(bootstrap: dict,
             "team_id":             player["team"],
             "player_status":       status,
             "chance_of_playing":   chance if chance is not None else 100,
-            # ── Fixture ───────────────────────────────────────────
+            # ”” Fixture ”””””””””””””””””””””””””””””””””””””””””””
             "is_blank":            is_blank,
             "is_double":           is_double,
             "is_home":             fixture["is_home"],
             "opponent_encoded":    opp_encoded,
             "opp_strength":        opp_strength,
             "difficulty":          fixture["difficulty"],
-            # ── Rolling form features ─────────────────────────────
+            # ”” Rolling form features ”””””””””””””””””””””””””””””
             "roll3_pts":           last.get("roll3_pts",        0) or 0,
             "roll5_pts":           last.get("roll5_pts",        0) or 0,
             "roll3_mins":          last.get("roll3_mins",       0) or 0,
@@ -1269,7 +1431,7 @@ def build_current_features(bootstrap: dict,
             "roll3_influence":     last.get("roll3_influence",   0) or 0,
             "roll3_saves":         last.get("roll3_saves",       0) or 0,
             "roll3_yellows":       last.get("roll3_yellows",     0) or 0,
-            # ── EWMA form features ────────────────────────────────
+            # ”” EWMA form features ””””””””””””””””””””””””””””””””
             "ewm3_pts":            last.get("ewm3_pts",         0) or 0,
             "ewm5_pts":            last.get("ewm5_pts",         0) or 0,
             "ewm3_mins":           last.get("ewm3_mins",        0) or 0,
@@ -1277,13 +1439,13 @@ def build_current_features(bootstrap: dict,
             "ewm3_assists":        last.get("ewm3_assists",      0) or 0,
             "ewm3_threat":         last.get("ewm3_threat",       0) or 0,
             "ewm3_creativity":     last.get("ewm3_creativity",   0) or 0,
-            # ── Derived / meta ────────────────────────────────────
+            # ”” Derived / meta ””””””””””””””””””””””””””””””””””””
             "games_played":        last.get("games_played",      0) or 0,
             "home_ratio":          last.get("home_ratio",       0.5) or 0.5,
             "price_change":        last.get("price_change",      0) or 0,
             "gw_number":           current_gw + 1,
             "selected_pct":        selected_pct,
-            # ── Transfer momentum (info columns, not model features)
+            # ”” Transfer momentum (info columns, not model features)
             "transfers_in_event":  transfers_in_event,
             "transfers_out_event": transfers_out_event,
         })
@@ -1292,7 +1454,7 @@ def build_current_features(bootstrap: dict,
     if pred_df.empty:
         return pred_df
 
-    # ── Main predictions (median model) ───────────────────────────
+    # ”” Main predictions (median model) ”””””””””””””””””””””””””””
     # NOTE: compute_expected_pts is intentionally NOT called here.
     # It is called once in run_pipeline after the 60/40 blend so that
     # expected_pts reflects the final blended predicted_pts, not the
@@ -1308,6 +1470,10 @@ def build_current_features(bootstrap: dict,
         q90_model    = model_info.get("q90_model")
         feature_cols = model_info["features"]
         mask         = pred_df["position"] == position
+        # cv_degraded=True: model CV R² < 0 — generalises worse than a mean
+        # predictor. We blend 60% model / 40% naive roll3_pts to temper
+        # overconfident outputs while still allowing the model to contribute.
+        cv_degraded  = bool(model_info.get("cv_degraded", False))
 
         if mask.sum() == 0:
             continue
@@ -1323,6 +1489,21 @@ def build_current_features(bootstrap: dict,
 
         # Median
         preds = np.clip(median_model.predict(X), 0, None)
+
+        # If this position's model has poor CV generalisation, blend with the
+        # naive roll3_pts baseline. The naive baseline is already shift(1) in
+        # the training data so it carries no leakage. Blending at 40% suppresses
+        # the model's worst overestimates without discarding its signal entirely.
+        if cv_degraded:
+            naive_pts = np.clip(
+                pos_rows["roll3_pts"].fillna(0).values, 0, None
+            )
+            preds = 0.60 * preds + 0.40 * naive_pts
+            log.info(
+                f"  [{position}] cv_degraded blend applied: "
+                f"60%% model + 40%% roll3_pts naive baseline."
+            )
+
         preds[blank_mask]  = 0.0
         preds[double_mask] *= 2.0
         pred_df.loc[mask, "predicted_pts"] = preds.round(2)
@@ -1330,6 +1511,11 @@ def build_current_features(bootstrap: dict,
         # Q10 floor
         if q10_model is not None:
             lo = np.clip(q10_model.predict(X), 0, None)
+            if cv_degraded:
+                naive_pts = np.clip(
+                    pos_rows["roll3_pts"].fillna(0).values * 0.6, 0, None
+                )
+                lo = 0.60 * lo + 0.40 * naive_pts
             lo[blank_mask]  = 0.0
             lo[double_mask] *= 2.0
             pred_df.loc[mask, "pts_low"] = lo.round(2)
@@ -1337,15 +1523,20 @@ def build_current_features(bootstrap: dict,
         # Q90 ceiling
         if q90_model is not None:
             hi = np.clip(q90_model.predict(X), 0, None)
+            if cv_degraded:
+                naive_pts = np.clip(
+                    pos_rows["roll3_pts"].fillna(0).values * 1.4, 0, None
+                )
+                hi = 0.60 * hi + 0.40 * naive_pts
             hi[blank_mask]  = 0.0
             hi[double_mask] *= 2.0
             pred_df.loc[mask, "pts_high"] = hi.round(2)
 
     return pred_df
 
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 # 13. TRANSFER SUGGESTIONS
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 
 def show_transfer_suggestions(my_team_df: pd.DataFrame,
                                other_players: pd.DataFrame,
@@ -1378,12 +1569,12 @@ def show_transfer_suggestions(my_team_df: pd.DataFrame,
         return pd.concat(suggestions).sort_values("gain", ascending=False)
 
     def _format_row(r) -> str:
-        dgw_tag   = " 🔄 DGW"   if r.get("is_double")                 else ""
-        price_tag = " 📈"        if r.get("predicted_price_change", 0) > 0.05 else \
-                    " 📉"        if r.get("predicted_price_change", 0) < -0.05 else ""
+        dgw_tag   = " ðŸ”„ DGW"   if r.get("is_double")                 else ""
+        price_tag = " ðŸ“ˆ"        if r.get("predicted_price_change", 0) > 0.05 else \
+                    " ðŸ“‰"        if r.get("predicted_price_change", 0) < -0.05 else ""
         xpts_str  = (f"  xPts: {r['expected_pts']:.2f}" if has_expected else "")
         return (
-            f"  OUT: {str(r['replace']):25s}  →  "
+            f"  OUT: {str(r['replace']):25s}  †’  "
             f"IN: {str(r['player_name']):25s}"
             f"  [{r['position']:3s}]"
             f"  Gain: +{r['gain']:.2f}"
@@ -1393,7 +1584,7 @@ def show_transfer_suggestions(my_team_df: pd.DataFrame,
         )
 
     def print_suggestions(sug_df: pd.DataFrame, budget: float) -> pd.DataFrame:
-        print(f"\n💰 Best Within-Budget Transfers (Bank: £{budget:.1f}M):")
+        print(f"\nðŸ’° Best Within-Budget Transfers (Bank: £{budget:.1f}M):")
         budget_top = (
             sug_df[sug_df["budget_ok"] & (sug_df["gain"] > 0)]
             .drop_duplicates("player_name")
@@ -1405,7 +1596,7 @@ def show_transfer_suggestions(my_team_df: pd.DataFrame,
             for _, r in budget_top.iterrows():
                 print(_format_row(r))
 
-        print("\n💸 Best Transfers Regardless of Budget:")
+        print("\nðŸ’¸ Best Transfers Regardless of Budget:")
         all_top = (
             sug_df[sug_df["gain"] > 0]
             .drop_duplicates("player_name")
@@ -1421,11 +1612,11 @@ def show_transfer_suggestions(my_team_df: pd.DataFrame,
 
     if len(budget_top) < 3:
         print(
-            f"\n⚠️  Note: Due to FPL API limitations, your bank "
+            f"\nš ï¸  Note: Due to FPL API limitations, your bank "
             f"(£{bank_balance:.1f}M) may differ slightly from the app."
         )
         print(
-            f"❓ Only {len(budget_top)} affordable option(s) within "
+            f"“ Only {len(budget_top)} affordable option(s) within "
             f"£{bank_balance:.1f}M."
         )
         user_input = input(
@@ -1444,13 +1635,13 @@ def show_transfer_suggestions(my_team_df: pd.DataFrame,
                 print("  Invalid input, skipping.")
     else:
         print(
-            f"\n⚠️  Note: Bank shown (£{bank_balance:.1f}M) may differ "
+            f"\nš ï¸  Note: Bank shown (£{bank_balance:.1f}M) may differ "
             f"slightly from the FPL app. Always double-check before confirming."
         )
 
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 # 14. FULL PIPELINE
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 
 def run_pipeline(team_id: int = TEAM_ID,
                  max_players: int = None,
@@ -1472,21 +1663,21 @@ def run_pipeline(team_id: int = TEAM_ID,
       11. Display squad, captain, transfers
     """
     log.info("=" * 65)
-    log.info("  FPL AI ASSISTANT — Phase 1 (v5)")
+    log.info("  FPL AI ASSISTANT ” Phase 1 (v5)")
     log.info("=" * 65)
 
-    # ── Fetch ──────────────────────────────────────────────────────
-    log.info("⬇️  Fetching bootstrap data...")
+    # ”” Fetch ””””””””””””””””””””””””””””””””””””””””””””””””””””””
+    log.info("¬‡ï¸  Fetching bootstrap data...")
     bootstrap   = fetch_bootstrap()
     fixtures_df = fetch_fixtures()
     current_gw  = fetch_current_gw(bootstrap)
-    log.info(f"📅 Last completed GW: {current_gw}  →  Predicting GW{current_gw+1}")
+    log.info(f"ðŸ“… Last completed GW: {current_gw}  †’  Predicting GW{current_gw+1}")
 
-    log.info("⬇️  Fetching your team...")
+    log.info("¬‡ï¸  Fetching your team...")
     try:
         team_data     = fetch_my_team(team_id, current_gw)
         my_player_ids = [p["element"] for p in team_data["picks"]]
-        log.info(f"✅ Team fetched — {len(my_player_ids)} players.")
+        log.info(f"œ… Team fetched ” {len(my_player_ids)} players.")
     except Exception as e:
         log.error(f"Could not fetch team: {e}")
         my_player_ids = []
@@ -1494,45 +1685,45 @@ def run_pipeline(team_id: int = TEAM_ID,
     transfer_info   = fetch_transfer_info(team_id, current_gw)
     bank_balance    = transfer_info["bank_balance"]
     transfer_status = transfer_info["transfer_status"]
-    log.info(f"💰 Bank: £{bank_balance:.1f}M  |  {transfer_status}")
+    log.info(f"ðŸ’° Bank: £{bank_balance:.1f}M  |  {transfer_status}")
 
-    # ── History ────────────────────────────────────────────────────
-    log.info("📚 Loading player history...")
+    # ”” History ””””””””””””””””””””””””””””””””””””””””””””””””””””
+    log.info("ðŸ“š Loading player history...")
     history_df = build_player_history_df(
         bootstrap, max_players=max_players, refresh=refresh
     )
 
-    # ── Train ──────────────────────────────────────────────────────
-    log.info("🤖 Training position-specific models (median + quantile)...")
+    # ”” Train ””””””””””””””””””””””””””””””””””””””””””””””””””””””
+    log.info("ðŸ¤– Training position-specific models (median + quantile)...")
     models = train_models(history_df)
 
-    log.info("🧩 Training component models (goals / assists / clean / bonus)...")
+    log.info("ðŸ§© Training component models (goals / assists / clean / bonus)...")
     component_models = train_component_models(history_df)
 
-    log.info("💰 Training price prediction model...")
+    log.info("ðŸ’° Training price prediction model...")
     price_model = train_price_model(history_df)
 
-    # ── Save models ────────────────────────────────────────────────
+    # ”” Save models ””””””””””””””””””””””””””””””””””””””””””””””””
     model_payload = {"models": models, "features": FEATURE_COLS}
     with open("fpl_model.pkl", "wb") as f:
         pickle.dump(model_payload, f)
-    log.info("💾 Models saved → fpl_model.pkl")
+    log.info("ðŸ’¾ Models saved †’ fpl_model.pkl")
 
-    # Versioned copy — never overwrites; lets you track week-over-week quality
+    # Versioned copy ” never overwrites; lets you track week-over-week quality
     versioned_path = f"fpl_model_gw{current_gw}.pkl"
     with open(versioned_path, "wb") as f:
         pickle.dump(model_payload, f)
-    log.info(f"💾 Versioned model → {versioned_path}")
+    log.info(f"ðŸ’¾ Versioned model †’ {versioned_path}")
 
-    # ── Predict ────────────────────────────────────────────────────
-    log.info(f"🔮 Predicting GW{current_gw+1} scores...")
+    # ”” Predict ””””””””””””””””””””””””””””””””””””””””””””””””””””
+    log.info(f"ðŸ”® Predicting GW{current_gw+1} scores...")
     pred_df = build_current_features(
         bootstrap, fixtures_df, history_df, models,
         current_gw, my_player_ids=my_player_ids
     )
 
     # Component predictions + blend with direct model
-    log.info("🧩 Applying component model predictions...")
+    log.info("ðŸ§© Applying component model predictions...")
     pred_df = predict_component_pts(component_models, pred_df)
     # Blend: (1-COMPONENT_BLEND_WEIGHT) direct model + COMPONENT_BLEND_WEIGHT components.
     # Direct model has tighter RMSE; component model adds per-stat explainability.
@@ -1543,7 +1734,7 @@ def run_pipeline(team_id: int = TEAM_ID,
         COMPONENT_BLEND_WEIGHT * pred_df["pts_from_components"]
     ).round(2)
     # Compute expected_pts once here on the final blended predicted_pts.
-    # This is the only call — build_current_features deliberately does not call it.
+    # This is the only call ” build_current_features deliberately does not call it.
     pred_df = compute_expected_pts(pred_df)
 
     # Price predictions
@@ -1552,9 +1743,9 @@ def run_pipeline(team_id: int = TEAM_ID,
     my_team_df    = pred_df[pred_df["player_id"].isin(my_player_ids)].copy()
     other_players = pred_df[~pred_df["player_id"].isin(my_player_ids)].copy()
 
-    # ── Display squad ──────────────────────────────────────────────
+    # ”” Display squad ””””””””””””””””””””””””””””””””””””””””””””””
     print("\n" + "=" * 65)
-    print(f"  YOUR SQUAD — GW{current_gw+1} Predictions")
+    print(f"  YOUR SQUAD ” GW{current_gw+1} Predictions")
     print("=" * 65)
     display_cols = [
         "player_name", "position", "price",
@@ -1569,7 +1760,7 @@ def run_pipeline(team_id: int = TEAM_ID,
         .to_string(index=False)
     )
 
-    # ── Captain recommendation ─────────────────────────────────────
+    # ”” Captain recommendation ”””””””””””””””””””””””””””””””””””””
     if not my_team_df.empty:
         captainable  = my_team_df[~my_team_df["is_blank"]]
         sort_by      = "expected_pts" if "expected_pts" in captainable.columns \
@@ -1595,7 +1786,7 @@ def run_pipeline(team_id: int = TEAM_ID,
                         comp_parts.append(f"{val:.2f} {label}")
             comp_str = "  Breakdown: " + " + ".join(comp_parts) if comp_parts else ""
 
-            print(f"\n🏆 Captain:      {captain['player_name']}")
+            print(f"\nðŸ† Captain:      {captain['player_name']}")
             print(
                 f"   xPts: {cap_xpts:.2f}  |  "
                 f"Floor: {cap_low:.1f}  |  "
@@ -1604,29 +1795,29 @@ def run_pipeline(team_id: int = TEAM_ID,
             )
             if comp_str:
                 print(comp_str)
-            print(f"\n🥈 Vice Captain: {vice_captain['player_name']}  —  {vc_xpts:.2f} xPts")
+            print(f"\nðŸ¥ˆ Vice Captain: {vice_captain['player_name']}  ”  {vc_xpts:.2f} xPts")
 
-    # ── Transfer suggestions ───────────────────────────────────────
+    # ”” Transfer suggestions ”””””””””””””””””””””””””””””””””””””””
     print("\n" + "=" * 65)
     print("  TRANSFER SUGGESTIONS")
     print("=" * 65)
     show_transfer_suggestions(my_team_df, other_players, bank_balance)
 
-    # ── Save predictions ───────────────────────────────────────────
+    # ”” Save predictions ”””””””””””””””””””””””””””””””””””””””””””
     pred_df.to_csv("fpl_predictions.csv", index=False)
-    log.info("✅ Predictions saved → fpl_predictions.csv")
-    log.info("✅ Phase 1 v5 complete — ready for Phase 2")
+    log.info("œ… Predictions saved †’ fpl_predictions.csv")
+    log.info("œ… Phase 1 v5 complete ” ready for Phase 2")
 
     return models, pred_df, my_team_df
 
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 # ENTRY POINT
-# ─────────────────────────────────────────
+# ”””””””””””””””””””””””””””””””””””””””””
 
 if __name__ == "__main__":
     REFRESH = "--refresh" in sys.argv
     if REFRESH:
-        log.info("🔄 --refresh flag detected.")
+        log.info("ðŸ”„ --refresh flag detected.")
 
     models, pred_df, my_team_df = run_pipeline(
         team_id=TEAM_ID,
