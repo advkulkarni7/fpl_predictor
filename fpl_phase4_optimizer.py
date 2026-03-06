@@ -32,6 +32,26 @@ New in v5 (5 algorithmic additions):
      bench_delta = after_bench_score - before_bench_score
      Sometimes a transfer improves the bench more than the XI.
 
+Fix in v5.1:
+
+  🟡 FIX — Bench ordering XI mismatch resolved (v5.1):
+     The original v5 _build_result called get_bench_order_recommendation(
+     squad_df) which independently re-selects its own "best 11" from all
+     15 players using a plain combined_score greedy sort. The ILP selects
+     its XI using a p_plays_full-weighted objective, so the two XIs
+     legitimately differ whenever any squad player has p_plays_full < 1.0.
+     When they diverged, the name-rank lookup assigned rank 999 to ILP
+     bench players that weren't on Phase 3's bench, causing all of them to
+     silently fall back to combined_score ordering — defeating bench_ev
+     entirely for precisely the squads with injury/rotation uncertainty
+     (where correct bench ordering matters most).
+
+     Fixed by replacing the cross-function bench ordering call with a new
+     self-contained helper _order_bench_by_ev(bench_pool, starting_xi)
+     that computes bench_ev directly from the ILP's actual starters and
+     bench players, with no re-selection step. get_bench_order_recommendation
+     is no longer imported or called in _build_result.
+
 Changes preserved from v4 (10 fixes):
   - Phase 1 v5 pipeline (component blend, expected_pts, prices)
   - pkl freshness check
@@ -96,7 +116,10 @@ from fpl_phase3_constraints import (
     print_ilp_result,
     print_double_transfers,
     run_monte_carlo_captain,
-    get_bench_order_recommendation,
+    # get_bench_order_recommendation intentionally NOT imported here.
+    # _build_result now uses the self-contained _order_bench_by_ev helper
+    # which operates directly on the ILP's actual bench_pool and starting_xi,
+    # avoiding the XI mismatch bug described in the v5.1 docstring.
 )
 
 try:
@@ -357,6 +380,66 @@ def _bench_boost_mode(squad_df: pd.DataFrame,
     }
 
 
+def _order_bench_by_ev(bench_pool: pd.DataFrame,
+                        starting_xi: pd.DataFrame) -> pd.DataFrame:
+    """
+    Order the ILP bench players by expected auto-sub contribution (bench_ev).
+
+    bench_ev per player = xpts * p_at_least_one_miss * gk_penalty
+      where p_at_least_one_miss = max(0.05, 1 - prod(p_plays_full for starters))
+      and   gk_penalty = 0.3 for GK (rare auto-sub), 1.0 for outfield.
+
+    GK is always last regardless of bench_ev.
+    Outfield players are sorted by bench_ev descending.
+
+    WHY THIS EXISTS (v5.1 fix):
+    The previous approach called get_bench_order_recommendation(squad_df)
+    from Phase 3, which re-runs its own greedy XI selector on all 15 players
+    using a plain combined_score sort. The ILP selects its XI using a
+    p_plays_full-weighted objective — so the two XIs differ whenever any
+    player has p_plays_full < 1.0. When they diverged, ILP bench players
+    were not found in Phase 3's bench_order list, got rank 999 in the
+    name-lookup, and silently fell back to combined_score sort — exactly
+    the wrong outcome for squads with injury/rotation risk, where correct
+    bench ordering matters most.
+
+    This helper uses the ILP's actual starting_xi to compute
+    p_at_least_one_miss and ranks the ILP's actual bench_pool directly.
+    No re-selection. No name-lookup. No silent fallback.
+    """
+    if bench_pool.empty:
+        return bench_pool.reset_index(drop=True)
+
+    # P(at least one starter misses) — floored at 0.05 matching Phase 3 v5.1
+    if "p_plays_full" in starting_xi.columns:
+        p_full_vals = starting_xi["p_plays_full"].fillna(1.0).astype(float).values
+    else:
+        p_full_vals = np.ones(len(starting_xi))
+    p_miss = max(0.05, 1.0 - float(np.prod(p_full_vals)))
+
+    xpts_col = "expected_pts" if "expected_pts" in bench_pool.columns else "predicted_pts"
+    pool = bench_pool.copy()
+
+    pool["_bench_ev"] = pool.apply(
+        lambda r: round(
+            float(r.get(xpts_col, 0) or 0) * p_miss *
+            (0.3 if r["position"] == "Goalkeeper" else 1.0),
+            3,
+        ),
+        axis=1,
+    )
+    pool["_is_gk"] = (pool["position"] == "Goalkeeper")
+
+    # Sort: outfield first (ascending _is_gk = False before True),
+    # within outfield by bench_ev descending.
+    bench_ordered = (
+        pool.sort_values(["_is_gk", "_bench_ev"], ascending=[True, False])
+        .drop(columns=["_bench_ev", "_is_gk"])
+        .reset_index(drop=True)
+    )
+    return bench_ordered
+
+
 def _build_result(starting_xi: pd.DataFrame,
                    bench_pool: pd.DataFrame,
                    squad_df: pd.DataFrame,
@@ -389,44 +472,12 @@ def _build_result(starting_xi: pd.DataFrame,
     vc_pool["_vc_score"] = vc_pool.apply(vc_safety_score, axis=1)
     vice_captain = vc_pool.nlargest(1, "_vc_score").iloc[0]
 
-    # Item 3 (v5): bench ordering via Phase 3's get_bench_order_recommendation.
-    # Uses bench_ev = expected_pts × P(auto-sub needed) × gk_penalty.
-    # GK always last. Falls back to combined_score sort if Phase 3 fails.
-    try:
-        bench_rec        = get_bench_order_recommendation(squad_df)
-        p3_bench_order   = bench_rec.get("bench_order", [])  # list of player names
-        p3_bench_df      = bench_rec.get("bench", pd.DataFrame())
-
-        if p3_bench_order and not p3_bench_df.empty:
-            # Reorder bench_pool to match Phase 3's recommended order.
-            # Match on player_name; any ILP bench players not in Phase 3's list
-            # (edge case: ILP XI ≠ Phase 3 greedy XI) go at end by combined_score.
-            name_rank = {name: i for i, name in enumerate(p3_bench_order)}
-            bench_pool_sorted = bench_pool.copy()
-            bench_pool_sorted["_p3_rank"] = bench_pool_sorted["player_name"].map(
-                lambda n: name_rank.get(n, 999)
-            )
-            bench_ordered = bench_pool_sorted.sort_values("_p3_rank").drop(
-                columns=["_p3_rank"]
-            ).reset_index(drop=True)
-        else:
-            raise ValueError("Empty Phase 3 bench recommendation")
-
-    except Exception:
-        # Fallback: non-blank outfield first (by combined_score), GK last
-        bench_gk       = bench_pool[bench_pool["position"] == "Goalkeeper"]
-        bench_outfield = bench_pool[bench_pool["position"] != "Goalkeeper"]
-        if "is_blank_next_gw" in bench_outfield.columns:
-            bench_non_blank = bench_outfield[~bench_outfield["is_blank_next_gw"]] \
-                              .sort_values("combined_score", ascending=False)
-            bench_blanks    = bench_outfield[bench_outfield["is_blank_next_gw"]]
-        else:
-            bench_non_blank = bench_outfield.sort_values("combined_score", ascending=False)
-            bench_blanks    = pd.DataFrame()
-        bench_ordered = pd.concat(
-            [b for b in [bench_non_blank, bench_blanks, bench_gk] if not b.empty],
-            ignore_index=True
-        )
+    # v5.1: bench ordering via _order_bench_by_ev — computes bench_ev
+    # directly from the ILP's actual starting_xi and bench_pool.
+    # Replaces the previous get_bench_order_recommendation(squad_df) call
+    # which re-selected its own XI and caused ordering mismatches for any
+    # squad with injury/rotation risk. See _order_bench_by_ev docstring.
+    bench_ordered = _order_bench_by_ev(bench_pool, starting_xi)
 
     bench_val = _prob_weighted_bench_score(bench_ordered, squad_df)
 
