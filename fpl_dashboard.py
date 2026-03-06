@@ -1750,9 +1750,9 @@ def render_entry_gate():
             border: 1px solid var(--line) !important;
             border-radius: 16px !important;
             box-shadow: var(--shadow) !important;
-            padding: 1.25rem 1.2rem 1rem !important;
+            padding: 1.4rem 1.3rem 1.1rem !important;
             margin: 0 auto !important;
-            max-width: 640px !important;
+            max-width: 660px !important;
         }
         .entry-kicker {
             font-size: 0.72rem;
@@ -1762,22 +1762,61 @@ def render_entry_gate():
             margin-bottom: 0.3rem;
         }
         .entry-title {
-            font-size: clamp(1.45rem, 2.6vw, 2.05rem);
+            font-size: clamp(1.35rem, 2.4vw, 1.85rem);
             font-weight: 800;
-            line-height: 1.06;
+            line-height: 1.1;
             color: var(--text);
-            margin: 0 0 0.55rem 0;
+            margin: 0 0 0.35rem 0;
         }
         .entry-sub {
             color: var(--muted);
-            font-size: 0.98rem;
-            line-height: 1.5;
+            font-size: 0.92rem;
+            line-height: 1.55;
             margin-bottom: 0.9rem;
+        }
+        .entry-steps {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 0.75rem 0.9rem;
+            margin-bottom: 0.9rem;
+        }
+        .entry-step {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.65rem;
+            margin-bottom: 0.5rem;
+            font-size: 0.84rem;
+            color: var(--text);
+            line-height: 1.45;
+        }
+        .entry-step:last-child { margin-bottom: 0; }
+        .entry-step-num {
+            background: var(--primary);
+            color: #111;
+            font-weight: 800;
+            font-size: 0.68rem;
+            border-radius: 999px;
+            min-width: 1.35rem;
+            height: 1.35rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            margin-top: 0.05rem;
+        }
+        .entry-url {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--primary);
+            background: rgba(39,232,167,0.07);
+            border-radius: 5px;
+            padding: 0.1rem 0.35rem;
         }
         @media (max-width: 900px) {
             .st-key-entry_gate_card {
                 max-width: 100% !important;
-                padding: 1rem 0.85rem 0.85rem !important;
+                padding: 1rem 0.85rem 0.9rem !important;
             }
         }
         </style>
@@ -1785,26 +1824,56 @@ def render_entry_gate():
         unsafe_allow_html=True,
     )
 
-    st.markdown("<div style='height:min(12vh,120px);'></div>", unsafe_allow_html=True)
-    left, center, right = st.columns([1.1, 1.35, 1.1])
+    st.markdown("<div style='height:min(8vh,80px);'></div>", unsafe_allow_html=True)
+    left, center, right = st.columns([1.0, 1.5, 1.0])
     with center:
         with st.container(key="entry_gate_card"):
             st.markdown("<div class='entry-kicker'>FPL AI Assistant</div>", unsafe_allow_html=True)
-            st.markdown("<div class='entry-title'>Enter Team ID To Continue</div>", unsafe_allow_html=True)
+            st.markdown("<div class='entry-title'>Your personal FPL decision engine</div>", unsafe_allow_html=True)
             st.markdown(
-                "<div class='entry-sub'>Set your FPL Team ID once, then access the full decision dashboard.</div>",
+                "<div class='entry-sub'>"
+                "Transfer advice, captain picks, fixture analysis and AI-powered insights — "
+                "all tailored to <strong>your squad</strong>. Enter your FPL Team ID to get started."
+                "</div>",
+                unsafe_allow_html=True,
+            )
+
+            # Inline step-by-step — always visible, no extra click needed
+            st.markdown(
+                """
+                <div class='entry-steps'>
+                    <div style='font-size:0.7rem; letter-spacing:0.12em; text-transform:uppercase;
+                                color:var(--muted); margin-bottom:0.55rem;'>How to find your Team ID</div>
+                    <div class='entry-step'>
+                        <div class='entry-step-num'>1</div>
+                        <div>Go to <span class='entry-url'>fantasy.premierleague.com</span> and log in
+                        <em>(use a browser, not the mobile app)</em></div>
+                    </div>
+                    <div class='entry-step'>
+                        <div class='entry-step-num'>2</div>
+                        <div>Click <strong>Points</strong> or <strong>Pick Team</strong>, then scroll down
+                        and open <strong>Gameweek History</strong></div>
+                    </div>
+                    <div class='entry-step'>
+                        <div class='entry-step-num'>3</div>
+                        <div>Look at the URL bar — your Team ID is the number between
+                        <span class='entry-url'>/entry/</span> and the next <span class='entry-url'>/</span><br>
+                        e.g. <span class='entry-url'>…/entry/<strong>123456</strong>/history</span></div>
+                    </div>
+                </div>
+                """,
                 unsafe_allow_html=True,
             )
 
             gate_input = st.text_input(
-                "FPL ID",
+                "Your FPL Team ID",
                 key="entry_gate_team_id",
-                placeholder="e.g. 12345",
-                help="Numeric Team ID from fantasy.premierleague.com",
+                placeholder="e.g. 123456",
+                help="The number from the URL on fantasy.premierleague.com",
             )
-            go_col, help_col = st.columns([1.45, 1.0])
+            go_col, link_col = st.columns([1.45, 1.0])
             with go_col:
-                if st.button("Enter Dashboard", use_container_width=True, type="primary", key="entry_gate_go"):
+                if st.button("Enter Dashboard →", use_container_width=True, type="primary", key="entry_gate_go"):
                     digits_only = "".join(ch for ch in str(gate_input or "").strip() if ch.isdigit())
                     if digits_only and int(digits_only) > 0:
                         st.session_state["cfg_team_id"] = int(digits_only)
@@ -1814,10 +1883,13 @@ def render_entry_gate():
                         st.session_state["run"] = True
                         st.rerun()
                     else:
-                        st.warning("Enter a valid numeric Team ID.")
-            with help_col:
-                if st.button("How do I find my FPL ID?", use_container_width=True, key="entry_gate_help"):
-                    st.session_state["show_team_id_help"] = True
+                        st.warning("Please enter a valid numeric Team ID.")
+            with link_col:
+                st.link_button(
+                    "Open FPL Website ↗",
+                    "https://fantasy.premierleague.com/",
+                    use_container_width=True,
+                )
 
     if st.session_state.get("show_team_id_help", False):
         st.session_state["show_team_id_help"] = False
@@ -5798,11 +5870,11 @@ elif page == "Scout":
             ["Goalkeeper","Defender","Midfielder","Forward"],
             key="px_pos_filter_widget")
     with f2:
-        price_range = st.slider("Price Range (£M)", 3.5, 15.0, st.session_state["px_price_range_widget"], 0.5, key="px_price_range_widget")
+        price_range = st.slider("Price Range (£M)", 3.5, 15.0, step=0.5, key="px_price_range_widget")
     with f3:
-        min_pred = st.slider("Min Predicted Pts", 0.0, 15.0, st.session_state["px_min_pred_widget"], 0.5, key="px_min_pred_widget")
+        min_pred = st.slider("Min Predicted Pts", 0.0, 15.0, step=0.5, key="px_min_pred_widget")
     with f4:
-        search = st.text_input("Search player name", st.session_state["px_search_widget"], key="px_search_widget")
+        search = st.text_input("Search player name", key="px_search_widget")
 
     # Persist latest filter values across mode/layout switches.
     st.session_state["px_pos_filter"] = pos_filter
@@ -5860,17 +5932,26 @@ elif page == "Scout":
                 else plot_df["xpts_val"] if mode == "Ceiling"
                 else plot_df["xpts_val"] * safety
             )
-            x_med = float(plot_df["price"].median())
-            y_med = float(plot_df["xpts_val"].median())
-            top_value = plot_df.nlargest(8, "objective_score")
+
+            # Compute medians only on players with meaningful xPts (>0.5)
+            # to avoid the reference lines being dragged to zero by
+            # injured/unused players.
+            active = plot_df[plot_df["xpts_val"] > 0.5]
+            x_med = float(active["price"].median()) if not active.empty else float(plot_df["price"].median())
+            y_med = float(active["xpts_val"].median()) if not active.empty else float(plot_df["xpts_val"].median())
+
+            # Top picks — reduce to 5 labels to avoid overlap
+            top_value = plot_df.nlargest(5, "objective_score")
 
             fig = px.scatter(
                 plot_df,
                 x="price", y="xpts_val",
                 color="position",
-                size="value_index",
-                size_max=26,
-                opacity=0.78,
+                # Uniform size — bubble area carries no extra info that
+                # isn't already shown by color. value_index as size made
+                # cheap players with any xPts look enormous, cluttering the chart.
+                size_max=14,
+                opacity=0.72,
                 hover_name="player_name",
                 hover_data={
                     "team_name": True,
@@ -5886,55 +5967,84 @@ elif page == "Scout":
                 color_discrete_map=POSITION_COLOR_MAP,
             )
 
+            # Reference lines — only meaningful because median is now
+            # computed on active players only
             fig.add_hline(
-                y=y_med, line_dash="dot", line_color=PLOTLY_ACCENT,
-                annotation_text="Median xPts", annotation_position="top left",
+                y=y_med, line_dash="dot", line_color=PLOTLY_ACCENT, line_width=1,
+                annotation_text=f"Median xPts ({y_med:.1f})", annotation_position="top left",
+                annotation_font=dict(size=10, color=PLOTLY_ACCENT),
             )
             fig.add_vline(
-                x=x_med, line_dash="dot", line_color=PLOTLY_ACCENT,
-                annotation_text="Median Price", annotation_position="top right",
+                x=x_med, line_dash="dot", line_color=PLOTLY_ACCENT, line_width=1,
+                annotation_text=f"Median Price (£{x_med:.1f}M)", annotation_position="top right",
+                annotation_font=dict(size=10, color=PLOTLY_ACCENT),
             )
 
+            # Top picks — 5 labels, staggered positions to reduce overlap
+            label_positions = ["top center", "top right", "bottom right", "top left", "bottom center"]
             fig.add_trace(go.Scatter(
                 x=top_value["price"],
                 y=top_value["xpts_val"],
                 mode="markers+text",
                 text=top_value["player_name"].str.split().str[-1],
-                textposition="top center",
-                textfont=dict(size=10, color=PLOTLY_TEXT),
+                textposition=[label_positions[i % len(label_positions)] for i in range(len(top_value))],
+                textfont=dict(size=11, color=PLOTLY_PRIMARY, family="Space Mono"),
                 marker=dict(
-                    size=12,
+                    size=14,
                     symbol="diamond",
-                    color=_hex_to_rgba(PLOTLY_PRIMARY, 0.15),
-                    line=dict(color=PLOTLY_PRIMARY, width=1.8),
+                    color=_hex_to_rgba(PLOTLY_PRIMARY, 0.18),
+                    line=dict(color=PLOTLY_PRIMARY, width=2),
                 ),
-                name="Top Value",
+                name="Top Picks",
                 hoverinfo="skip",
             ))
 
+            # Your Squad — bright white fill so stars are visible on dark bg
             squad_pool = plot_df[plot_df["player_id"].isin(data["my_player_ids"])]
             if not squad_pool.empty:
                 fig.add_trace(go.Scatter(
                     x=squad_pool["price"],
                     y=squad_pool["xpts_val"],
-                    mode="markers",
-                    marker=dict(size=16, color=PLOTLY_SURFACE, symbol="star",
-                                line=dict(color=PLOTLY_PRIMARY, width=2)),
+                    mode="markers+text",
+                    text=squad_pool["player_name"].str.split().str[-1],
+                    textposition="bottom center",
+                    textfont=dict(size=9, color=PLOTLY_WARNING),
+                    marker=dict(
+                        size=14,
+                        color=PLOTLY_WARNING,
+                        symbol="star",
+                        line=dict(color="#ffffff", width=1),
+                    ),
                     name="Your Squad",
                     hovertext=squad_pool["player_name"],
+                    hoverinfo="text",
                 ))
 
             fig.update_layout(
                 **PLOTLY_THEME,
-                height=470,
-                margin=dict(l=10, r=10, t=22, b=32),
-                legend_title_text="Role",
+                height=490,
+                margin=dict(l=10, r=10, t=30, b=32),
+                legend_title_text="",
+                legend=dict(
+                    orientation="v",
+                    x=1.01, y=1,
+                    font=dict(size=11),
+                ),
             )
             st.plotly_chart(
                 fig, use_container_width=True,
                 config={"displayModeBar": "hover", "responsive": True, "scrollZoom": True},
             )
-            st.caption(f"Objective mode: {mode}. Y-axis uses {'expected_pts' if 'expected_pts' in plot_df.columns else 'predicted_pts'}. Diamonds mark top picks for the selected objective.")
+
+            # Quadrant explanation so the chart is self-explanatory
+            st.caption(
+                f"**Top-right** = expensive & high xPts · "
+                f"**Top-left** = great value · "
+                f"**Bottom-right** = expensive underperformers · "
+                f"Reference lines use active-player medians only (xPts > 0.5). "
+                f"⬦ = top 5 by {mode.lower()} · ★ = your squad · "
+                f"Objective: **{mode}**."
+            )
 
             render_section_header(f"Top Picks by {mode}")
             top_strip = top_value.sort_values("objective_score", ascending=False).head(6).copy()
