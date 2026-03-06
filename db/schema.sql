@@ -6,7 +6,7 @@
 CREATE TABLE IF NOT EXISTS model_snapshots (
     id BIGSERIAL PRIMARY KEY,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    status TEXT NOT NULL CHECK (status IN ('building', 'ready', 'failed')),
+    status TEXT NOT NULL CHECK (status IN ('building', 'ready', 'degraded', 'failed')),
     season TEXT,
     current_gw INTEGER,
     pipeline_version TEXT,
@@ -35,15 +35,16 @@ ALTER TABLE model_snapshots ADD COLUMN IF NOT EXISTS row_count_team_fixture INTE
 
 DO $$
 BEGIN
-    IF NOT EXISTS (
+    IF EXISTS (
         SELECT 1
         FROM pg_constraint
         WHERE conname = 'model_snapshots_status_check'
     ) THEN
-        ALTER TABLE model_snapshots
-            ADD CONSTRAINT model_snapshots_status_check
-            CHECK (status IN ('building', 'ready', 'failed'));
+        ALTER TABLE model_snapshots DROP CONSTRAINT model_snapshots_status_check;
     END IF;
+    ALTER TABLE model_snapshots
+        ADD CONSTRAINT model_snapshots_status_check
+        CHECK (status IN ('building', 'ready', 'degraded', 'failed'));
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_model_snapshots_status_created
@@ -243,14 +244,18 @@ CREATE INDEX IF NOT EXISTS idx_player_fixture_snapshot_gw
 
 
 -- 5) Model diagnostics by position
+-- shap_features added to store SHAP feature importances per position
 CREATE TABLE IF NOT EXISTS model_metrics_snapshot (
     snapshot_id BIGINT NOT NULL,
     position TEXT NOT NULL,
 
     rmse NUMERIC,
     r2 NUMERIC,
+    naive_baseline_rmse NUMERIC,
+    beats_baseline BOOLEAN,
     model_name TEXT,
     n_train_rows INTEGER,
+    shap_features JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     PRIMARY KEY (snapshot_id, position),
@@ -263,8 +268,11 @@ CREATE TABLE IF NOT EXISTS model_metrics_snapshot (
 -- Schema evolution for existing deployments
 ALTER TABLE model_metrics_snapshot ADD COLUMN IF NOT EXISTS rmse NUMERIC;
 ALTER TABLE model_metrics_snapshot ADD COLUMN IF NOT EXISTS r2 NUMERIC;
+ALTER TABLE model_metrics_snapshot ADD COLUMN IF NOT EXISTS naive_baseline_rmse NUMERIC;
+ALTER TABLE model_metrics_snapshot ADD COLUMN IF NOT EXISTS beats_baseline BOOLEAN;
 ALTER TABLE model_metrics_snapshot ADD COLUMN IF NOT EXISTS model_name TEXT;
 ALTER TABLE model_metrics_snapshot ADD COLUMN IF NOT EXISTS n_train_rows INTEGER;
+ALTER TABLE model_metrics_snapshot ADD COLUMN IF NOT EXISTS shap_features JSONB;
 ALTER TABLE model_metrics_snapshot ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 DO $$
