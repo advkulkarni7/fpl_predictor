@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-05-15T08:44:35.116111+00:00",
+  "generated_at": "2026-05-15T19:22:29.002528+00:00",
   "pipeline_version": "precompute-v1",
   "status": "ready",
   "warnings": [],
-  "current_gw": 36,
+  "current_gw": 37,
   "row_count_predictions": 838,
   "row_count_fixture_scores": 838,
-  "row_count_history": 28066,
+  "row_count_history": 28904,
   "files": {
     "fpl_predictions_csv": "/home/runner/work/fpl_predictor/fpl_predictor/data/fpl_predictions.csv",
     "player_fixture_scores_csv": "/home/runner/work/fpl_predictor/fpl_predictor/data/player_fixture_scores.csv",
